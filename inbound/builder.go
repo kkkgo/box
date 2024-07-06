@@ -11,23 +11,17 @@ import (
 	E "github.com/sagernet/sing/common/exceptions"
 )
 
-func New(ctx context.Context, router adapter.Router, logger log.ContextLogger, options option.Inbound, platformInterface platform.Interface) (adapter.Inbound, error) {
+func New(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.Inbound, platformInterface platform.Interface) (adapter.Inbound, error) {
 	if options.Type == "" {
 		return nil, E.New("missing inbound type")
 	}
 	switch options.Type {
 	case C.TypeRedirect:
-		return NewRedirect(ctx, router, logger, options.Tag, options.RedirectOptions), nil
+		return NewRedirect(ctx, router, logger, tag, options.RedirectOptions), nil
 	case C.TypeTProxy:
-		return NewTProxy(ctx, router, logger, options.Tag, options.TProxyOptions), nil
+		return NewTProxy(ctx, router, logger, tag, options.TProxyOptions), nil
 	case C.TypeDirect:
-		return NewDirect(ctx, router, logger, options.Tag, options.DirectOptions), nil
-	case C.TypeSOCKS:
-		return NewSocks(ctx, router, logger, options.Tag, options.SocksOptions), nil
-	case C.TypeHTTP:
-		return NewHTTP(ctx, router, logger, options.Tag, options.HTTPOptions)
-	case C.TypeMixed:
-		return NewMixed(ctx, router, logger, options.Tag, options.MixedOptions), nil
+		return NewDirect(ctx, router, logger, tag, options.DirectOptions), nil
 	default:
 		return nil, E.New("unknown inbound type: ", options.Type)
 	}

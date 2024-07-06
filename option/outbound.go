@@ -12,32 +12,39 @@ type _Outbound struct {
 	Tag             string                  `json:"tag,omitempty"`
 	DirectOptions   DirectOutboundOptions   `json:"-"`
 	SocksOptions    SocksOutboundOptions    `json:"-"`
-	HTTPOptions     HTTPOutboundOptions     `json:"-"`
 	SelectorOptions SelectorOutboundOptions `json:"-"`
 	URLTestOptions  URLTestOutboundOptions  `json:"-"`
 }
 
 type Outbound _Outbound
 
-func (h Outbound) MarshalJSON() ([]byte, error) {
-	var v any
+func (h *Outbound) RawOptions() (any, error) {
+	var rawOptionsPtr any
 	switch h.Type {
 	case C.TypeDirect:
-		v = h.DirectOptions
+		rawOptionsPtr = &h.DirectOptions
 	case C.TypeBlock, C.TypeDNS:
-		v = nil
+		rawOptionsPtr = nil
 	case C.TypeSOCKS:
-		v = h.SocksOptions
-	case C.TypeHTTP:
-		v = h.HTTPOptions
+		rawOptionsPtr = &h.SocksOptions
 	case C.TypeSelector:
-		v = h.SelectorOptions
+		rawOptionsPtr = &h.SelectorOptions
 	case C.TypeURLTest:
-		v = h.URLTestOptions
+		rawOptionsPtr = &h.URLTestOptions
+	case "":
+		return nil, E.New("missing outbound type")
 	default:
 		return nil, E.New("unknown outbound type: ", h.Type)
 	}
-	return MarshallObjects((_Outbound)(h), v)
+	return rawOptionsPtr, nil
+}
+
+func (h *Outbound) MarshalJSON() ([]byte, error) {
+	rawOptions, err := h.RawOptions()
+	if err != nil {
+		return nil, err
+	}
+	return MarshallObjects((*_Outbound)(h), rawOptions)
 }
 
 func (h *Outbound) UnmarshalJSON(bytes []byte) error {
@@ -45,45 +52,51 @@ func (h *Outbound) UnmarshalJSON(bytes []byte) error {
 	if err != nil {
 		return err
 	}
-	var v any
-	switch h.Type {
-	case C.TypeDirect:
-		v = &h.DirectOptions
-	case C.TypeBlock, C.TypeDNS:
-		v = nil
-	case C.TypeSOCKS:
-		v = &h.SocksOptions
-	case C.TypeHTTP:
-		v = &h.HTTPOptions
-	case C.TypeSelector:
-		v = &h.SelectorOptions
-	case C.TypeURLTest:
-		v = &h.URLTestOptions
-	default:
-		return E.New("unknown outbound type: ", h.Type)
-	}
-	err = UnmarshallExcluded(bytes, (*_Outbound)(h), v)
+	rawOptions, err := h.RawOptions()
 	if err != nil {
-		return E.Cause(err, "outbound options")
+		return err
+	}
+	err = UnmarshallExcluded(bytes, (*_Outbound)(h), rawOptions)
+	if err != nil {
+		return err
 	}
 	return nil
 }
 
+type DialerOptionsWrapper interface {
+	TakeDialerOptions() DialerOptions
+	ReplaceDialerOptions(options DialerOptions)
+}
+
 type DialerOptions struct {
-	Detour             string         `json:"detour,omitempty"`
-	BindInterface      string         `json:"bind_interface,omitempty"`
-	Inet4BindAddress   *ListenAddress `json:"inet4_bind_address,omitempty"`
-	Inet6BindAddress   *ListenAddress `json:"inet6_bind_address,omitempty"`
-	ProtectPath        string         `json:"protect_path,omitempty"`
-	RoutingMark        int            `json:"routing_mark,omitempty"`
-	ReuseAddr          bool           `json:"reuse_addr,omitempty"`
-	ConnectTimeout     Duration       `json:"connect_timeout,omitempty"`
-	TCPFastOpen        bool           `json:"tcp_fast_open,omitempty"`
-	TCPMultiPath       bool           `json:"tcp_multi_path,omitempty"`
-	UDPFragment        *bool          `json:"udp_fragment,omitempty"`
-	UDPFragmentDefault bool           `json:"-"`
-	DomainStrategy     DomainStrategy `json:"domain_strategy,omitempty"`
-	FallbackDelay      Duration       `json:"fallback_delay,omitempty"`
+	Detour              string         `json:"detour,omitempty"`
+	BindInterface       string         `json:"bind_interface,omitempty"`
+	Inet4BindAddress    *ListenAddress `json:"inet4_bind_address,omitempty"`
+	Inet6BindAddress    *ListenAddress `json:"inet6_bind_address,omitempty"`
+	ProtectPath         string         `json:"protect_path,omitempty"`
+	RoutingMark         uint32         `json:"routing_mark,omitempty"`
+	ReuseAddr           bool           `json:"reuse_addr,omitempty"`
+	ConnectTimeout      Duration       `json:"connect_timeout,omitempty"`
+	TCPFastOpen         bool           `json:"tcp_fast_open,omitempty"`
+	TCPMultiPath        bool           `json:"tcp_multi_path,omitempty"`
+	UDPFragment         *bool          `json:"udp_fragment,omitempty"`
+	UDPFragmentDefault  bool           `json:"-"`
+	DomainStrategy      DomainStrategy `json:"domain_strategy,omitempty"`
+	FallbackDelay       Duration       `json:"fallback_delay,omitempty"`
+	IsWireGuardListener bool           `json:"-"`
+}
+
+func (o *DialerOptions) TakeDialerOptions() DialerOptions {
+	return *o
+}
+
+func (o *DialerOptions) ReplaceDialerOptions(options DialerOptions) {
+	*o = options
+}
+
+type ServerOptionsWrapper interface {
+	TakeServerOptions() ServerOptions
+	ReplaceServerOptions(options ServerOptions)
 }
 
 type ServerOptions struct {
@@ -93,4 +106,12 @@ type ServerOptions struct {
 
 func (o ServerOptions) Build() M.Socksaddr {
 	return M.ParseSocksaddrHostPort(o.Server, o.ServerPort)
+}
+
+func (o *ServerOptions) TakeServerOptions() ServerOptions {
+	return *o
+}
+
+func (o *ServerOptions) ReplaceServerOptions(options ServerOptions) {
+	*o = options
 }

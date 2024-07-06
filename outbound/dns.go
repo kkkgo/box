@@ -46,8 +46,8 @@ func (d *DNS) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.Pa
 }
 
 func (d *DNS) NewConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext) error {
+	metadata.Destination = M.Socksaddr{}
 	defer conn.Close()
-	ctx = adapter.WithContext(ctx, &metadata)
 	for {
 		err := d.handleConnection(ctx, conn, metadata)
 		if err != nil {
@@ -98,6 +98,7 @@ func (d *DNS) handleConnection(ctx context.Context, conn net.Conn, metadata adap
 }
 
 func (d *DNS) NewPacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext) error {
+	metadata.Destination = M.Socksaddr{}
 	var reader N.PacketReader = conn
 	var counters []N.CountFunc
 	var cachedPackets []*N.PacketBuffer
@@ -111,11 +112,11 @@ func (d *DNS) NewPacketConnection(ctx context.Context, conn N.PacketConn, metada
 			}
 		}
 		if readWaiter, created := bufio.CreatePacketReadWaiter(reader); created {
+			readWaiter.InitializeReadWaiter(N.ReadWaitOptions{})
 			return d.newPacketConnection(ctx, conn, readWaiter, counters, cachedPackets, metadata)
 		}
 		break
 	}
-	ctx = adapter.WithContext(ctx, &metadata)
 	fastClose, cancel := common.ContextWithCancelCause(ctx)
 	timeout := canceler.New(fastClose, cancel, C.DNSTimeout)
 	var group task.Group
@@ -164,15 +165,11 @@ func (d *DNS) NewPacketConnection(ctx context.Context, conn N.PacketConn, metada
 					return err
 				}
 				timeout.Update()
-				responseBuffer := buf.NewPacket()
-				responseBuffer.Resize(1024, 0)
-				n, err := response.PackBuffer(responseBuffer.FreeBytes())
+				responseBuffer, err := dns.TruncateDNSMessage(&message, response, 1024)
 				if err != nil {
 					cancel(err)
-					responseBuffer.Release()
 					return err
 				}
-				responseBuffer.Truncate(len(n))
 				err = conn.WritePacket(responseBuffer, destination)
 				if err != nil {
 					cancel(err)
@@ -193,15 +190,13 @@ func (d *DNS) newPacketConnection(ctx context.Context, conn N.PacketConn, readWa
 	timeout := canceler.New(fastClose, cancel, C.DNSTimeout)
 	var group task.Group
 	group.Append0(func(ctx context.Context) error {
-		var buffer *buf.Buffer
-		readWaiter.InitializeReadWaiter(func() *buf.Buffer {
-			return buf.NewSize(dns.FixedPacketSize)
-		})
-		defer readWaiter.InitializeReadWaiter(nil)
 		for {
-			var message mDNS.Msg
-			var destination M.Socksaddr
-			var err error
+			var (
+				message     mDNS.Msg
+				destination M.Socksaddr
+				err         error
+				buffer      *buf.Buffer
+			)
 			if len(cached) > 0 {
 				packet := cached[0]
 				cached = cached[1:]
@@ -216,9 +211,8 @@ func (d *DNS) newPacketConnection(ctx context.Context, conn N.PacketConn, readWa
 				}
 				destination = packet.Destination
 			} else {
-				destination, err = readWaiter.WaitReadPacket()
+				buffer, destination, err = readWaiter.WaitReadPacket()
 				if err != nil {
-					buffer.Release()
 					cancel(err)
 					return err
 				}
@@ -241,15 +235,11 @@ func (d *DNS) newPacketConnection(ctx context.Context, conn N.PacketConn, readWa
 					return err
 				}
 				timeout.Update()
-				responseBuffer := buf.NewPacket()
-				responseBuffer.Resize(1024, 0)
-				n, err := response.PackBuffer(responseBuffer.FreeBytes())
+				responseBuffer, err := dns.TruncateDNSMessage(&message, response, 1024)
 				if err != nil {
 					cancel(err)
-					responseBuffer.Release()
 					return err
 				}
-				responseBuffer.Truncate(len(n))
 				err = conn.WritePacket(responseBuffer, destination)
 				if err != nil {
 					cancel(err)

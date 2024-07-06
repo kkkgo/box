@@ -109,13 +109,13 @@ func NewDefaultRule(router adapter.Router, logger log.ContextLogger, options opt
 	}
 	if len(options.GeoIP) > 0 {
 		item := NewGeoIPItem(router, logger, false, options.GeoIP)
-		rule.destinationAddressItems = append(rule.destinationAddressItems, item)
+		rule.destinationIPCIDRItems = append(rule.destinationIPCIDRItems, item)
 		rule.allItems = append(rule.allItems, item)
 	}
 	if len(options.SourceIPCIDR) > 0 {
 		item, err := NewIPCIDRItem(true, options.SourceIPCIDR)
 		if err != nil {
-			return nil, E.Cause(err, "source_ipcidr")
+			return nil, E.Cause(err, "source_ip_cidr")
 		}
 		rule.sourceAddressItems = append(rule.sourceAddressItems, item)
 		rule.allItems = append(rule.allItems, item)
@@ -130,12 +130,12 @@ func NewDefaultRule(router adapter.Router, logger log.ContextLogger, options opt
 		if err != nil {
 			return nil, E.Cause(err, "ipcidr")
 		}
-		rule.destinationAddressItems = append(rule.destinationAddressItems, item)
+		rule.destinationIPCIDRItems = append(rule.destinationIPCIDRItems, item)
 		rule.allItems = append(rule.allItems, item)
 	}
 	if options.IPIsPrivate {
 		item := NewIPIsPrivateItem(false)
-		rule.destinationAddressItems = append(rule.destinationAddressItems, item)
+		rule.destinationIPCIDRItems = append(rule.destinationIPCIDRItems, item)
 		rule.allItems = append(rule.allItems, item)
 	}
 	if len(options.SourcePort) > 0 {
@@ -205,7 +205,7 @@ func NewDefaultRule(router adapter.Router, logger log.ContextLogger, options opt
 		rule.allItems = append(rule.allItems, item)
 	}
 	if len(options.RuleSet) > 0 {
-		item := NewRuleSetItem(router, options.RuleSet, options.RuleSetIPCIDRMatchSource)
+		item := NewRuleSetItem(router, options.RuleSet, options.RuleSetIPCIDRMatchSource, false)
 		rule.items = append(rule.items, item)
 		rule.allItems = append(rule.allItems, item)
 	}

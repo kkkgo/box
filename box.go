@@ -53,7 +53,8 @@ func New(options Options) (*Box, error) {
 		ctx = context.Background()
 	}
 	ctx = service.ContextWithDefaultRegistry(ctx)
-	ctx = pause.ContextWithDefaultManager(ctx)
+	ctx = pause.WithDefaultManager(ctx)
+
 	var defaultLogWriter io.Writer
 	if options.PlatformInterface != nil {
 		defaultLogWriter = io.Discard
@@ -61,6 +62,7 @@ func New(options Options) (*Box, error) {
 	logFactory, err := log.New(log.Options{
 		Context:        ctx,
 		Options:        common.PtrValueOrDefault(options.Log),
+		Observable:     false,
 		DefaultWriter:  defaultLogWriter,
 		BaseTime:       createdAt,
 		PlatformWriter: options.PlatformLogWriter,
@@ -93,6 +95,7 @@ func New(options Options) (*Box, error) {
 			ctx,
 			router,
 			logFactory.NewLogger(F.ToString("inbound/", inboundOptions.Type, "[", tag, "]")),
+			tag,
 			inboundOptions,
 			options.PlatformInterface,
 		)
@@ -138,6 +141,7 @@ func New(options Options) (*Box, error) {
 	preServices1 := make(map[string]adapter.Service)
 	preServices2 := make(map[string]adapter.Service)
 	postServices := make(map[string]adapter.Service)
+
 	return &Box{
 		router:       router,
 		inbounds:     inbounds,
@@ -159,7 +163,7 @@ func (s *Box) PreStart() error {
 		defer func() {
 			v := recover()
 			if v != nil {
-				log.Error(E.Cause(err, "origin error"))
+				println(err.Error())
 				debug.PrintStack()
 				panic("panic on early close: " + fmt.Sprint(v))
 			}
@@ -178,9 +182,9 @@ func (s *Box) Start() error {
 		defer func() {
 			v := recover()
 			if v != nil {
-				log.Error(E.Cause(err, "origin error"))
+				println(err.Error())
 				debug.PrintStack()
-				panic("panic on early close: " + fmt.Sprint(v))
+				println("panic on early start: " + fmt.Sprint(v))
 			}
 		}()
 		s.Close()
@@ -191,7 +195,7 @@ func (s *Box) Start() error {
 }
 
 func (s *Box) preStart() error {
-	monitor := taskmonitor.New(s.logger, C.DefaultStartTimeout)
+	monitor := taskmonitor.New(s.logger, C.StartTimeout)
 	monitor.Start("start logger")
 	err := s.logFactory.Start()
 	monitor.Finish()
@@ -217,6 +221,10 @@ func (s *Box) preStart() error {
 				return E.Cause(err, "pre-start ", serviceName)
 			}
 		}
+	}
+	err = s.router.PreStart()
+	if err != nil {
+		return E.Cause(err, "pre-start router")
 	}
 	err = s.startOutbounds()
 	if err != nil {
@@ -254,7 +262,11 @@ func (s *Box) start() error {
 			return E.Cause(err, "initialize inbound/", in.Type(), "[", tag, "]")
 		}
 	}
-	return s.postStart()
+	err = s.postStart()
+	if err != nil {
+		return err
+	}
+	return s.router.Cleanup()
 }
 
 func (s *Box) postStart() error {
@@ -264,19 +276,28 @@ func (s *Box) postStart() error {
 			return E.Cause(err, "start ", serviceName)
 		}
 	}
-	for _, outbound := range s.outbounds {
-		if lateOutbound, isLateOutbound := outbound.(adapter.PostStarter); isLateOutbound {
+	// TODO: reorganize ALL start order
+	for _, out := range s.outbounds {
+		if lateOutbound, isLateOutbound := out.(adapter.PostStarter); isLateOutbound {
 			err := lateOutbound.PostStart()
 			if err != nil {
-				return E.Cause(err, "post-start outbound/", outbound.Tag())
+				return E.Cause(err, "post-start outbound/", out.Tag())
 			}
 		}
 	}
 	err := s.router.PostStart()
 	if err != nil {
-		return E.Cause(err, "post-start router")
+		return err
 	}
-	return s.router.PostStart()
+	for _, in := range s.inbounds {
+		if lateInbound, isLateInbound := in.(adapter.PostStarter); isLateInbound {
+			err = lateInbound.PostStart()
+			if err != nil {
+				return E.Cause(err, "post-start inbound/", in.Tag())
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Box) Close() error {
@@ -286,7 +307,7 @@ func (s *Box) Close() error {
 	default:
 		close(s.done)
 	}
-	monitor := taskmonitor.New(s.logger, C.DefaultStopTimeout)
+	monitor := taskmonitor.New(s.logger, C.StopTimeout)
 	var errors error
 	for serviceName, service := range s.postServices {
 		monitor.Start("close ", serviceName)

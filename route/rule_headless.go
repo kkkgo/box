@@ -66,7 +66,7 @@ func NewDefaultHeadlessRule(router adapter.Router, options option.DefaultHeadles
 	if len(options.SourceIPCIDR) > 0 {
 		item, err := NewIPCIDRItem(true, options.SourceIPCIDR)
 		if err != nil {
-			return nil, E.Cause(err, "source_ipcidr")
+			return nil, E.Cause(err, "source_ip_cidr")
 		}
 		rule.sourceAddressItems = append(rule.sourceAddressItems, item)
 		rule.allItems = append(rule.allItems, item)
@@ -80,11 +80,11 @@ func NewDefaultHeadlessRule(router adapter.Router, options option.DefaultHeadles
 		if err != nil {
 			return nil, E.Cause(err, "ipcidr")
 		}
-		rule.destinationAddressItems = append(rule.destinationAddressItems, item)
+		rule.destinationIPCIDRItems = append(rule.destinationIPCIDRItems, item)
 		rule.allItems = append(rule.allItems, item)
 	} else if options.IPSet != nil {
 		item := NewRawIPCIDRItem(false, options.IPSet)
-		rule.destinationAddressItems = append(rule.destinationAddressItems, item)
+		rule.destinationIPCIDRItems = append(rule.destinationIPCIDRItems, item)
 		rule.allItems = append(rule.allItems, item)
 	}
 	if len(options.SourcePort) > 0 {
@@ -129,14 +129,18 @@ func NewDefaultHeadlessRule(router adapter.Router, options option.DefaultHeadles
 		rule.allItems = append(rule.allItems, item)
 	}
 	if len(options.WIFISSID) > 0 {
-		item := NewWIFISSIDItem(router, options.WIFISSID)
-		rule.items = append(rule.items, item)
-		rule.allItems = append(rule.allItems, item)
+		if router != nil {
+			item := NewWIFISSIDItem(router, options.WIFISSID)
+			rule.items = append(rule.items, item)
+			rule.allItems = append(rule.allItems, item)
+		}
 	}
 	if len(options.WIFIBSSID) > 0 {
-		item := NewWIFIBSSIDItem(router, options.WIFIBSSID)
-		rule.items = append(rule.items, item)
-		rule.allItems = append(rule.allItems, item)
+		if router != nil {
+			item := NewWIFIBSSIDItem(router, options.WIFIBSSID)
+			rule.items = append(rule.items, item)
+			rule.allItems = append(rule.allItems, item)
+		}
 	}
 	return rule, nil
 }
