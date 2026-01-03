@@ -9,6 +9,10 @@ import (
 	"github.com/sagernet/sing-box/adapter/outbound"
 	"github.com/sagernet/sing-box/adapter/service"
 	"github.com/sagernet/sing-box/dns"
+	"github.com/sagernet/sing-box/dns/transport"
+	"github.com/sagernet/sing-box/dns/transport/fakeip"
+	"github.com/sagernet/sing-box/dns/transport/hosts"
+	"github.com/sagernet/sing-box/dns/transport/local"
 	"github.com/sagernet/sing-box/protocol/block"
 	"github.com/sagernet/sing-box/protocol/direct"
 	protocolDNS "github.com/sagernet/sing-box/protocol/dns"
@@ -19,6 +23,7 @@ import (
 
 	"github.com/sagernet/sing-box/protocol/socks"
 	"github.com/sagernet/sing-box/protocol/tun"
+	"github.com/sagernet/sing-box/service/resolved"
 )
 
 func Context(ctx context.Context) context.Context {
@@ -66,6 +71,15 @@ func EndpointRegistry() *endpoint.Registry {
 func DNSTransportRegistry() *dns.TransportRegistry {
 	registry := dns.NewTransportRegistry()
 
+	transport.RegisterTCP(registry)
+	transport.RegisterUDP(registry)
+	transport.RegisterTLS(registry)
+	transport.RegisterHTTPS(registry)
+	hosts.RegisterTransport(registry)
+	local.RegisterTransport(registry)
+	fakeip.RegisterTransport(registry)
+	resolved.RegisterTransport(registry)
+
 	registerDHCPTransport(registry)
 
 	return registry
@@ -73,6 +87,8 @@ func DNSTransportRegistry() *dns.TransportRegistry {
 
 func ServiceRegistry() *service.Registry {
 	registry := service.NewRegistry()
+
+	resolved.RegisterService(registry)
 
 	registerCCMService(registry)
 	registerOCMService(registry)
