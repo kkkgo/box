@@ -24,7 +24,6 @@ import (
 	"github.com/sagernet/sing-box/protocol/socks"
 	"github.com/sagernet/sing-box/protocol/tun"
 	"github.com/sagernet/sing-box/service/resolved"
-	"github.com/sagernet/sing-box/service/ssmapi"
 )
 
 func Context(ctx context.Context) context.Context {
@@ -90,7 +89,6 @@ func ServiceRegistry() *service.Registry {
 	registry := service.NewRegistry()
 
 	resolved.RegisterService(registry)
-	ssmapi.RegisterService(registry)
 
 	registerCCMService(registry)
 	registerOCMService(registry)

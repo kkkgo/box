@@ -182,7 +182,6 @@ func New(options Options) (*Box, error) {
 	if err != nil {
 		return nil, E.Cause(err, "initialize network manager")
 	}
-	service.MustRegister[adapter.NetworkManager](ctx, networkManager)
 	connectionManager := route.NewConnectionManager(logFactory.NewLogger("connection"))
 	service.MustRegister[adapter.ConnectionManager](ctx, connectionManager)
 	router := route.NewRouter(ctx, logFactory, routeOptions, dnsOptions)
@@ -325,12 +324,7 @@ func New(options Options) (*Box, error) {
 			option.LocalDNSServerOptions{},
 		)
 	})
-	if platformInterface != nil {
-		err = platformInterface.Initialize(networkManager)
-		if err != nil {
-			return nil, E.Cause(err, "initialize platform interface")
-		}
-	}
+
 	if needCacheFile {
 		cacheFile := cachefile.New(ctx, common.PtrValueOrDefault(experimentalOptions.CacheFile))
 		service.MustRegister[adapter.CacheFile](ctx, cacheFile)
@@ -518,10 +512,6 @@ func (s *Box) Close() error {
 	})
 	s.logger.Trace("close logger completed (", F.Seconds(time.Since(startTime).Seconds()), "s)")
 	return err
-}
-
-func (s *Box) Network() adapter.NetworkManager {
-	return s.network
 }
 
 func (s *Box) Router() adapter.Router {
