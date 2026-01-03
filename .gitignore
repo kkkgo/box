@@ -15,4 +15,6 @@
 .DS_Store
 /config.d/
 /venv/
-/cmd/sing-box/sing-box
+CLAUDE.md
+AGENTS.md
+/.claude/

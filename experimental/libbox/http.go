@@ -17,8 +17,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"time"
 
+	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -50,8 +50,7 @@ type HTTPRequest interface {
 }
 
 type HTTPResponse interface {
-	GetContent() ([]byte, error)
-	GetContentString() (string, error)
+	GetContent() (*StringBox, error)
 	WriteTo(path string) error
 }
 
@@ -69,30 +68,36 @@ type httpClient struct {
 
 func NewHTTPClient() HTTPClient {
 	client := new(httpClient)
-	client.client.Timeout = 15 * time.Second
 	client.client.Transport = &client.transport
+	client.transport.ForceAttemptHTTP2 = true
+	client.transport.TLSHandshakeTimeout = C.TCPTimeout
 	client.transport.TLSClientConfig = &client.tls
 	client.transport.DisableKeepAlives = true
 	return client
 }
 
 func (c *httpClient) ModernTLS() {
-	c.tls.MinVersion = tls.VersionTLS12
-	c.tls.CipherSuites = common.Map(tls.CipherSuites(), func(it *tls.CipherSuite) uint16 { return it.ID })
+	c.setTLSVersion(tls.VersionTLS12, 0, func(suite *tls.CipherSuite) bool { return true })
 }
 
 func (c *httpClient) RestrictedTLS() {
-	c.tls.MinVersion = tls.VersionTLS13
-	c.tls.CipherSuites = common.Map(common.Filter(tls.CipherSuites(), func(it *tls.CipherSuite) bool {
-		return common.Contains(it.SupportedVersions, uint16(tls.VersionTLS13))
-	}), func(it *tls.CipherSuite) uint16 {
+	c.setTLSVersion(tls.VersionTLS13, 0, func(suite *tls.CipherSuite) bool {
+		return common.Contains(suite.SupportedVersions, uint16(tls.VersionTLS13))
+	})
+}
+
+func (c *httpClient) setTLSVersion(minVersion, maxVersion uint16, filter func(*tls.CipherSuite) bool) {
+	c.tls.MinVersion = minVersion
+	if maxVersion != 0 {
+		c.tls.MaxVersion = maxVersion
+	}
+	c.tls.CipherSuites = common.Map(common.Filter(tls.CipherSuites(), filter), func(it *tls.CipherSuite) uint16 {
 		return it.ID
 	})
 }
 
 func (c *httpClient) PinnedTLS12() {
-	c.tls.MinVersion = tls.VersionTLS12
-	c.tls.MaxVersion = tls.VersionTLS12
+	c.setTLSVersion(tls.VersionTLS12, tls.VersionTLS12, func(suite *tls.CipherSuite) bool { return true })
 }
 
 func (c *httpClient) PinnedSHA256(sumHex string) {
@@ -127,7 +132,6 @@ func (c *httpClient) TrySocks5(port int32) {
 }
 
 func (c *httpClient) KeepAlive() {
-	c.transport.ForceAttemptHTTP2 = true
 	c.transport.DisableKeepAlives = false
 }
 
@@ -179,9 +183,7 @@ func (r *httpRequest) SetUserAgent(userAgent string) {
 }
 
 func (r *httpRequest) SetContent(content []byte) {
-	buffer := bytes.Buffer{}
-	buffer.Write(content)
-	r.request.Body = io.NopCloser(bytes.NewReader(buffer.Bytes()))
+	r.request.Body = io.NopCloser(bytes.NewReader(content))
 	r.request.ContentLength = int64(len(content))
 }
 
@@ -210,27 +212,22 @@ type httpResponse struct {
 }
 
 func (h *httpResponse) errorString() string {
-	content, err := h.GetContentString()
+	content, err := h.GetContent()
 	if err != nil {
 		return fmt.Sprint("HTTP ", h.Status)
 	}
 	return fmt.Sprint("HTTP ", h.Status, ": ", content)
 }
 
-func (h *httpResponse) GetContent() ([]byte, error) {
+func (h *httpResponse) GetContent() (*StringBox, error) {
 	h.getContentOnce.Do(func() {
 		defer h.Body.Close()
 		h.content, h.contentError = io.ReadAll(h.Body)
 	})
-	return h.content, h.contentError
-}
-
-func (h *httpResponse) GetContentString() (string, error) {
-	content, err := h.GetContent()
-	if err != nil {
-		return "", err
+	if h.contentError != nil {
+		return nil, h.contentError
 	}
-	return string(content), nil
+	return wrapString(string(h.content)), nil
 }
 
 func (h *httpResponse) WriteTo(path string) error {

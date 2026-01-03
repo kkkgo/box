@@ -2,24 +2,26 @@ package libbox
 
 import (
 	"os"
-	"os/user"
 	"runtime/debug"
-	"strconv"
 	"time"
 
-	"github.com/sagernet/sing-box/common/humanize"
 	C "github.com/sagernet/sing-box/constant"
-	_ "github.com/sagernet/sing-box/include"
+	"github.com/sagernet/sing-box/experimental/locale"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing/common/byteformats"
 )
 
 var (
-	sBasePath    string
-	sWorkingPath string
-	sTempPath    string
-	sUserID      int
-	sGroupID     int
-	sTVOS        bool
+	sBasePath                string
+	sWorkingPath             string
+	sTempPath                string
+	sUserID                  int
+	sGroupID                 int
+	sFixAndroidStack         bool
+	sCommandServerListenPort uint16
+	sCommandServerSecret     string
+	sLogMaxLines             int
+	sDebug                   bool
 )
 
 func init() {
@@ -27,32 +29,41 @@ func init() {
 	debug.SetTraceback("all")
 }
 
-func Setup(basePath string, workingPath string, tempPath string, isTVOS bool) {
-	sBasePath = basePath
-	sWorkingPath = workingPath
-	sTempPath = tempPath
-	sUserID = os.Getuid()
-	sGroupID = os.Getgid()
-	sTVOS = isTVOS
-	os.MkdirAll(sWorkingPath, 0o777)
-	os.MkdirAll(sTempPath, 0o777)
+type SetupOptions struct {
+	BasePath                string
+	WorkingPath             string
+	TempPath                string
+	FixAndroidStack         bool
+	CommandServerListenPort int32
+	CommandServerSecret     string
+	LogMaxLines             int
+	Debug                   bool
 }
 
-func SetupWithUsername(basePath string, workingPath string, tempPath string, username string) error {
-	sBasePath = basePath
-	sWorkingPath = workingPath
-	sTempPath = tempPath
-	sUser, err := user.Lookup(username)
-	if err != nil {
-		return err
-	}
-	sUserID, _ = strconv.Atoi(sUser.Uid)
-	sGroupID, _ = strconv.Atoi(sUser.Gid)
+func Setup(options *SetupOptions) error {
+	sBasePath = options.BasePath
+	sWorkingPath = options.WorkingPath
+	sTempPath = options.TempPath
+
+	sUserID = os.Getuid()
+	sGroupID = os.Getgid()
+
+	// TODO: remove after fixed
+	// https://github.com/golang/go/issues/68760
+	sFixAndroidStack = options.FixAndroidStack
+
+	sCommandServerListenPort = uint16(options.CommandServerListenPort)
+	sCommandServerSecret = options.CommandServerSecret
+	sLogMaxLines = options.LogMaxLines
+	sDebug = options.Debug
+
 	os.MkdirAll(sWorkingPath, 0o777)
 	os.MkdirAll(sTempPath, 0o777)
-	os.Chown(sWorkingPath, sUserID, sGroupID)
-	os.Chown(sTempPath, sUserID, sGroupID)
 	return nil
+}
+
+func SetLocale(localeId string) {
+	locale.Set(localeId)
 }
 
 func Version() string {
@@ -60,11 +71,11 @@ func Version() string {
 }
 
 func FormatBytes(length int64) string {
-	return humanize.Bytes(uint64(length))
+	return byteformats.FormatBytes(uint64(length))
 }
 
 func FormatMemoryBytes(length int64) string {
-	return humanize.MemoryBytes(uint64(length))
+	return byteformats.FormatMemoryBytes(uint64(length))
 }
 
 func FormatDuration(duration int64) string {

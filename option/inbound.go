@@ -1,90 +1,87 @@
 package option
 
 import (
+	"context"
 	"time"
 
-	C "github.com/sagernet/sing-box/constant"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/json"
+	"github.com/sagernet/sing/common/json/badjson"
+	"github.com/sagernet/sing/common/json/badoption"
+	"github.com/sagernet/sing/service"
 )
 
+type InboundOptionsRegistry interface {
+	CreateOptions(outboundType string) (any, bool)
+}
+
 type _Inbound struct {
-	Type            string                 `json:"type"`
-	Tag             string                 `json:"tag,omitempty"`
-	RedirectOptions RedirectInboundOptions `json:"-"`
-	TProxyOptions   TProxyInboundOptions   `json:"-"`
-	DirectOptions   DirectInboundOptions   `json:"-"`
-	SocksOptions    SocksInboundOptions    `json:"-"`
+	Type    string `json:"type"`
+	Tag     string `json:"tag,omitempty"`
+	Options any    `json:"-"`
 }
 
 type Inbound _Inbound
 
-func (h *Inbound) RawOptions() (any, error) {
-	var rawOptionsPtr any
-	switch h.Type {
-	case C.TypeRedirect:
-		rawOptionsPtr = &h.RedirectOptions
-	case C.TypeTProxy:
-		rawOptionsPtr = &h.TProxyOptions
-	case C.TypeDirect:
-		rawOptionsPtr = &h.DirectOptions
-	case C.TypeSOCKS:
-		rawOptionsPtr = &h.SocksOptions
-	case "":
-		return nil, E.New("missing inbound type")
-	default:
-		return nil, E.New("unknown inbound type: ", h.Type)
-	}
-	return rawOptionsPtr, nil
+func (h *Inbound) MarshalJSONContext(ctx context.Context) ([]byte, error) {
+	return badjson.MarshallObjectsContext(ctx, (*_Inbound)(h), h.Options)
 }
 
-func (h Inbound) MarshalJSON() ([]byte, error) {
-	rawOptions, err := h.RawOptions()
-	if err != nil {
-		return nil, err
-	}
-	return MarshallObjects((_Inbound)(h), rawOptions)
-}
-
-func (h *Inbound) UnmarshalJSON(bytes []byte) error {
-	err := json.Unmarshal(bytes, (*_Inbound)(h))
+func (h *Inbound) UnmarshalJSONContext(ctx context.Context, content []byte) error {
+	err := json.UnmarshalContext(ctx, content, (*_Inbound)(h))
 	if err != nil {
 		return err
 	}
-	rawOptions, err := h.RawOptions()
+	registry := service.FromContext[InboundOptionsRegistry](ctx)
+	if registry == nil {
+		return E.New("missing inbound fields registry in context")
+	}
+	options, loaded := registry.CreateOptions(h.Type)
+	if !loaded {
+		return E.New("unknown inbound type: ", h.Type)
+	}
+	err = badjson.UnmarshallExcludedContext(ctx, content, (*_Inbound)(h), options)
 	if err != nil {
 		return err
 	}
-	err = UnmarshallExcluded(bytes, (*_Inbound)(h), rawOptions)
-	if err != nil {
-		return err
-	}
+	h.Options = options
 	return nil
 }
 
+// Deprecated: Use rule action instead
 type InboundOptions struct {
-	SniffEnabled              bool           `json:"sniff,omitempty"`
-	SniffOverrideDestination  bool           `json:"sniff_override_destination,omitempty"`
-	SniffTimeout              Duration       `json:"sniff_timeout,omitempty"`
-	DomainStrategy            DomainStrategy `json:"domain_strategy,omitempty"`
-	UDPDisableDomainUnmapping bool           `json:"udp_disable_domain_unmapping,omitempty"`
+	SniffEnabled              bool               `json:"sniff,omitempty"`
+	SniffOverrideDestination  bool               `json:"sniff_override_destination,omitempty"`
+	SniffTimeout              badoption.Duration `json:"sniff_timeout,omitempty"`
+	DomainStrategy            DomainStrategy     `json:"domain_strategy,omitempty"`
+	UDPDisableDomainUnmapping bool               `json:"udp_disable_domain_unmapping,omitempty"`
+	Detour                    string             `json:"detour,omitempty"`
 }
 
 type ListenOptions struct {
-	Listen                      *ListenAddress   `json:"listen,omitempty"`
-	ListenPort                  uint16           `json:"listen_port,omitempty"`
-	TCPFastOpen                 bool             `json:"tcp_fast_open,omitempty"`
-	TCPMultiPath                bool             `json:"tcp_multi_path,omitempty"`
-	UDPFragment                 *bool            `json:"udp_fragment,omitempty"`
-	UDPFragmentDefault          bool             `json:"-"`
-	UDPTimeout                  UDPTimeoutCompat `json:"udp_timeout,omitempty"`
-	ProxyProtocol               bool             `json:"proxy_protocol,omitempty"`
-	ProxyProtocolAcceptNoHeader bool             `json:"proxy_protocol_accept_no_header,omitempty"`
-	Detour                      string           `json:"detour,omitempty"`
+	Listen               *badoption.Addr    `json:"listen,omitempty"`
+	ListenPort           uint16             `json:"listen_port,omitempty"`
+	BindInterface        string             `json:"bind_interface,omitempty"`
+	RoutingMark          FwMark             `json:"routing_mark,omitempty"`
+	ReuseAddr            bool               `json:"reuse_addr,omitempty"`
+	NetNs                string             `json:"netns,omitempty"`
+	DisableTCPKeepAlive  bool               `json:"disable_tcp_keep_alive,omitempty"`
+	TCPKeepAlive         badoption.Duration `json:"tcp_keep_alive,omitempty"`
+	TCPKeepAliveInterval badoption.Duration `json:"tcp_keep_alive_interval,omitempty"`
+	TCPFastOpen          bool               `json:"tcp_fast_open,omitempty"`
+	TCPMultiPath         bool               `json:"tcp_multi_path,omitempty"`
+	UDPFragment          *bool              `json:"udp_fragment,omitempty"`
+	UDPFragmentDefault   bool               `json:"-"`
+	UDPTimeout           UDPTimeoutCompat   `json:"udp_timeout,omitempty"`
+
+	// Deprecated: removed
+	ProxyProtocol bool `json:"proxy_protocol,omitempty"`
+	// Deprecated: removed
+	ProxyProtocolAcceptNoHeader bool `json:"proxy_protocol_accept_no_header,omitempty"`
 	InboundOptions
 }
 
-type UDPTimeoutCompat Duration
+type UDPTimeoutCompat badoption.Duration
 
 func (c UDPTimeoutCompat) MarshalJSON() ([]byte, error) {
 	return json.Marshal((time.Duration)(c).String())
@@ -97,7 +94,7 @@ func (c *UDPTimeoutCompat) UnmarshalJSON(data []byte) error {
 		*c = UDPTimeoutCompat(time.Second * time.Duration(valueNumber))
 		return nil
 	}
-	return json.Unmarshal(data, (*Duration)(c))
+	return json.Unmarshal(data, (*badoption.Duration)(c))
 }
 
 type ListenOptionsWrapper interface {
