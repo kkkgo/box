@@ -14,10 +14,11 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/conntrack"
+	"github.com/sagernet/sing-box/common/settings"
 	"github.com/sagernet/sing-box/common/taskmonitor"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
-	tun "github.com/sagernet/sing-tun"
+	"github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/control"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -30,6 +31,8 @@ import (
 
 	"golang.org/x/exp/slices"
 )
+
+var _ adapter.NetworkManager = (*NetworkManager)(nil)
 
 type NetworkManager struct {
 	logger            logger.ContextLogger
@@ -49,6 +52,7 @@ type NetworkManager struct {
 	inbound                adapter.InboundManager
 	outbound               adapter.OutboundManager
 	needWIFIState          bool
+	wifiMonitor            settings.WIFIMonitor
 	wifiState              adapter.WIFIState
 	wifiStateMutex         sync.RWMutex
 	started                bool
@@ -184,6 +188,20 @@ func (r *NetworkManager) Start(stage adapter.StartStage) error {
 			}
 		}
 	case adapter.StartStatePostStart:
+		if r.needWIFIState && !(r.platformInterface != nil && r.platformInterface.UsePlatformWIFIMonitor()) {
+			wifiMonitor, err := settings.NewWIFIMonitor(r.onWIFIStateChanged)
+			if err != nil {
+				if err != os.ErrInvalid {
+					r.logger.Warn(E.Cause(err, "create WIFI monitor"))
+				}
+			} else {
+				r.wifiMonitor = wifiMonitor
+				err = r.wifiMonitor.Start()
+				if err != nil {
+					r.logger.Warn(E.Cause(err, "start WIFI monitor"))
+				}
+			}
+		}
 		r.started = true
 	}
 	return nil
@@ -227,6 +245,13 @@ func (r *NetworkManager) Close() error {
 		monitor.Start("close network monitor")
 		err = E.Append(err, r.networkMonitor.Close(), func(err error) error {
 			return E.Cause(err, "close network monitor")
+		})
+		monitor.Finish()
+	}
+	if r.wifiMonitor != nil {
+		monitor.Start("close WIFI monitor")
+		err = E.Append(err, r.wifiMonitor.Close(), func(err error) error {
+			return E.Cause(err, "close WIFI monitor")
 		})
 		monitor.Finish()
 	}
@@ -412,6 +437,18 @@ func (r *NetworkManager) onWIFIStateChanged(state adapter.WIFIState) {
 	}
 }
 
+func (r *NetworkManager) UpdateWIFIState() {
+	var state adapter.WIFIState
+	if r.wifiMonitor != nil {
+		state = r.wifiMonitor.ReadWIFIState()
+	} else if r.platformInterface != nil && r.platformInterface.UsePlatformWIFIMonitor() {
+		state = r.platformInterface.ReadWIFIState()
+	} else {
+		return
+	}
+	r.onWIFIStateChanged(state)
+}
+
 func (r *NetworkManager) ResetNetwork() {
 	conntrack.Close()
 
@@ -472,6 +509,7 @@ func (r *NetworkManager) notifyInterfaceUpdate(defaultInterface *control.Interfa
 		}
 	}
 	r.logger.Info("updated default interface ", defaultInterface.Name, ", ", strings.Join(options, ", "))
+	r.UpdateWIFIState()
 
 	if !r.started {
 		return
