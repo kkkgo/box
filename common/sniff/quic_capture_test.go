@@ -17,7 +17,6 @@ import (
 )
 
 func TestSniffQUICQuicGoFingerprint(t *testing.T) {
-	t.Parallel()
 	const testSNI = "test.example.com"
 
 	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})

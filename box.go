@@ -19,7 +19,6 @@ import (
 	"github.com/sagernet/sing-box/common/tls"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/dns"
-	"github.com/sagernet/sing-box/dns/transport/local"
 	"github.com/sagernet/sing-box/experimental"
 	"github.com/sagernet/sing-box/experimental/cachefile"
 	"github.com/sagernet/sing-box/log"
@@ -125,18 +124,13 @@ func New(options Options) (*Box, error) {
 
 	ctx = pause.WithDefaultManager(ctx)
 	experimentalOptions := common.PtrValueOrDefault(options.Experimental)
-	applyDebugOptions(common.PtrValueOrDefault(experimentalOptions.Debug))
 	var needCacheFile bool
 	var needClashAPI bool
-	var needV2RayAPI bool
 	if experimentalOptions.CacheFile != nil && experimentalOptions.CacheFile.Enabled || options.PlatformLogWriter != nil {
 		needCacheFile = true
 	}
 	if experimentalOptions.ClashAPI != nil || options.PlatformLogWriter != nil {
 		needClashAPI = true
-	}
-	if experimentalOptions.V2RayAPI != nil && experimentalOptions.V2RayAPI.Listen != "" {
-		needV2RayAPI = true
 	}
 	platformInterface := service.FromContext[adapter.PlatformInterface](ctx)
 	var defaultLogWriter io.Writer
@@ -187,7 +181,6 @@ func New(options Options) (*Box, error) {
 	if err != nil {
 		return nil, E.Cause(err, "initialize network manager")
 	}
-	service.MustRegister[adapter.NetworkManager](ctx, networkManager)
 	connectionManager := route.NewConnectionManager(logFactory.NewLogger("connection"))
 	service.MustRegister[adapter.ConnectionManager](ctx, connectionManager)
 	router := route.NewRouter(ctx, logFactory, routeOptions, dnsOptions)
@@ -322,20 +315,7 @@ func New(options Options) (*Box, error) {
 			option.DirectOutboundOptions{},
 		)
 	})
-	dnsTransportManager.Initialize(func() (adapter.DNSTransport, error) {
-		return local.NewTransport(
-			ctx,
-			logFactory.NewLogger("dns/local"),
-			"local",
-			option.LocalDNSServerOptions{},
-		)
-	})
-	if platformInterface != nil {
-		err = platformInterface.Initialize(networkManager)
-		if err != nil {
-			return nil, E.Cause(err, "initialize platform interface")
-		}
-	}
+
 	if needCacheFile {
 		cacheFile := cachefile.New(ctx, common.PtrValueOrDefault(experimentalOptions.CacheFile))
 		service.MustRegister[adapter.CacheFile](ctx, cacheFile)
@@ -351,17 +331,6 @@ func New(options Options) (*Box, error) {
 		router.AppendTracker(clashServer)
 		service.MustRegister[adapter.ClashServer](ctx, clashServer)
 		internalServices = append(internalServices, clashServer)
-	}
-	if needV2RayAPI {
-		v2rayServer, err := experimental.NewV2RayServer(logFactory.NewLogger("v2ray-api"), common.PtrValueOrDefault(experimentalOptions.V2RayAPI))
-		if err != nil {
-			return nil, E.Cause(err, "create v2ray-server")
-		}
-		if v2rayServer.StatsService() != nil {
-			router.AppendTracker(v2rayServer.StatsService())
-			internalServices = append(internalServices, v2rayServer)
-			service.MustRegister[adapter.V2RayServer](ctx, v2rayServer)
-		}
 	}
 	if ntpOptions.Enabled {
 		ntpDialer, err := dialer.New(ctx, ntpOptions.DialerOptions, ntpOptions.ServerIsDomain())
@@ -534,10 +503,6 @@ func (s *Box) Close() error {
 	})
 	s.logger.Trace("close logger completed (", F.Seconds(time.Since(startTime).Seconds()), "s)")
 	return err
-}
-
-func (s *Box) Network() adapter.NetworkManager {
-	return s.network
 }
 
 func (s *Box) Router() adapter.Router {
