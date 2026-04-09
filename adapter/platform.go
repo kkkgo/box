@@ -36,6 +36,10 @@ type PlatformInterface interface {
 
 	UsePlatformNotification() bool
 	SendNotification(notification *Notification) error
+
+	UsePlatformNeighborResolver() bool
+	StartNeighborMonitor(listener NeighborUpdateListener) error
+	CloseNeighborMonitor(listener NeighborUpdateListener) error
 }
 
 type FindConnectionOwnerRequest struct {
@@ -47,11 +51,11 @@ type FindConnectionOwnerRequest struct {
 }
 
 type ConnectionOwner struct {
-	ProcessID          uint32
-	UserId             int32
-	UserName           string
-	ProcessPath        string
-	AndroidPackageName string
+	ProcessID           uint32
+	UserId              int32
+	UserName            string
+	ProcessPath         string
+	AndroidPackageNames []string
 }
 
 type Notification struct {

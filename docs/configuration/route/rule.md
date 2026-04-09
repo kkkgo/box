@@ -2,6 +2,11 @@
 icon: material/new-box
 ---
 
+!!! quote "Changes in sing-box 1.14.0"
+
+    :material-plus: [source_mac_address](#source_mac_address)  
+    :material-plus: [source_hostname](#source_hostname)
+
 !!! quote "Changes in sing-box 1.13.0"
 
     :material-plus: [interface_address](#interface_address)  
@@ -159,6 +164,12 @@ icon: material/new-box
           "tailscale",
           "wireguard"
         ],
+        "source_mac_address": [
+          "00:11:22:33:44:55"
+        ],
+        "source_hostname": [
+          "my-device"
+        ],
         "rule_set": [
           "geoip-cn",
           "geosite-cn"
@@ -199,7 +210,7 @@ icon: material/new-box
     (`source_port` || `source_port_range`) &&  
     `other fields`
 
-    Additionally, included rule-sets can be considered merged rather than as a single rule sub-item.
+    Additionally, each branch inside an included rule-set can be considered merged into the outer rule, while different branches keep OR semantics.
 
 #### inbound
 
@@ -448,6 +459,26 @@ Match specified outbounds' preferred routes.
 |-------------|-----------------------------------------------|
 | `tailscale` | Match MagicDNS domains and peers' allowed IPs |
 | `wireguard` | Match peers's allowed IPs                     |
+
+#### source_mac_address
+
+!!! question "Since sing-box 1.14.0"
+
+!!! quote ""
+
+    Only supported on Linux, macOS, or in graphical clients on Android and macOS. See [Neighbor Resolution](/configuration/shared/neighbor/) for setup.
+
+Match source device MAC address.
+
+#### source_hostname
+
+!!! question "Since sing-box 1.14.0"
+
+!!! quote ""
+
+    Only supported on Linux, macOS, or in graphical clients on Android and macOS. See [Neighbor Resolution](/configuration/shared/neighbor/) for setup.
+
+Match source device hostname from DHCP leases.
 
 #### rule_set
 

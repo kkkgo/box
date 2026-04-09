@@ -8,13 +8,15 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/common/conntrack"
+	"github.com/sagernet/sing-box/common/dialer"
+	"github.com/sagernet/sing-box/common/networkquality"
 	"github.com/sagernet/sing-box/common/urltest"
 	"github.com/sagernet/sing-box/experimental/clashapi"
 	"github.com/sagernet/sing-box/experimental/clashapi/trafficontrol"
 	"github.com/sagernet/sing-box/experimental/deprecated"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/protocol/group"
+	"github.com/sagernet/sing-box/service/oomkiller"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/batch"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -25,6 +27,8 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -33,9 +37,12 @@ var _ StartedServiceServer = (*StartedService)(nil)
 type StartedService struct {
 	ctx context.Context
 	// platform adapter.PlatformInterface
-	handler     PlatformHandler
-	debug       bool
-	logMaxLines int
+	handler           PlatformHandler
+	debug             bool
+	logMaxLines       int
+	oomKillerEnabled  bool
+	oomKillerDisabled bool
+	oomMemoryLimit    uint64
 	// workingDirectory string
 	// tempDirectory    string
 	// userID           int
@@ -64,9 +71,12 @@ type StartedService struct {
 type ServiceOptions struct {
 	Context context.Context
 	// Platform           adapter.PlatformInterface
-	Handler     PlatformHandler
-	Debug       bool
-	LogMaxLines int
+	Handler           PlatformHandler
+	Debug             bool
+	LogMaxLines       int
+	OOMKillerEnabled  bool
+	OOMKillerDisabled bool
+	OOMMemoryLimit    uint64
 	// WorkingDirectory   string
 	// TempDirectory      string
 	// UserID             int
@@ -78,9 +88,12 @@ func NewStartedService(options ServiceOptions) *StartedService {
 	s := &StartedService{
 		ctx: options.Context,
 		// platform:                options.Platform,
-		handler:     options.Handler,
-		debug:       options.Debug,
-		logMaxLines: options.LogMaxLines,
+		handler:           options.Handler,
+		debug:             options.Debug,
+		logMaxLines:       options.LogMaxLines,
+		oomKillerEnabled:  options.OOMKillerEnabled,
+		oomKillerDisabled: options.OOMKillerDisabled,
+		oomMemoryLimit:    options.OOMMemoryLimit,
 		// workingDirectory: options.WorkingDirectory,
 		// tempDirectory:    options.TempDirectory,
 		// userID:           options.UserID,
@@ -166,7 +179,7 @@ func (s *StartedService) waitForStarted(ctx context.Context) error {
 func (s *StartedService) StartOrReloadService(profileContent string, options *OverrideOptions) error {
 	s.serviceAccess.Lock()
 	switch s.serviceStatus.Status {
-	case ServiceStatus_IDLE, ServiceStatus_STARTED, ServiceStatus_STARTING:
+	case ServiceStatus_IDLE, ServiceStatus_STARTED, ServiceStatus_STARTING, ServiceStatus_FATAL:
 	default:
 		s.serviceAccess.Unlock()
 		return os.ErrInvalid
@@ -207,6 +220,14 @@ func (s *StartedService) StartOrReloadService(profileContent string, options *Ov
 	return nil
 }
 
+func (s *StartedService) Close() {
+	s.serviceStatusSubscriber.Close()
+	s.logSubscriber.Close()
+	s.urlTestSubscriber.Close()
+	s.clashModeSubscriber.Close()
+	s.connectionEventSubscriber.Close()
+}
+
 func (s *StartedService) CloseService() error {
 	s.serviceAccess.Lock()
 	switch s.serviceStatus.Status {
@@ -216,13 +237,14 @@ func (s *StartedService) CloseService() error {
 		return os.ErrInvalid
 	}
 	s.updateStatus(ServiceStatus_STOPPING)
-	if s.instance != nil {
-		err := s.instance.Close()
+	instance := s.instance
+	s.instance = nil
+	if instance != nil {
+		err := instance.Close()
 		if err != nil {
 			return s.updateStatusError(err)
 		}
 	}
-	s.instance = nil
 	s.startedAt = time.Time{}
 	s.updateStatus(ServiceStatus_IDLE)
 	s.serviceAccess.Unlock()
@@ -399,12 +421,14 @@ func (s *StartedService) SubscribeStatus(request *SubscribeStatusRequest, server
 
 func (s *StartedService) readStatus() *Status {
 	var status Status
-	status.Memory = memory.Inuse()
+	status.Memory = memory.Total()
 	status.Goroutines = int32(runtime.NumGoroutine())
-	status.ConnectionsOut = int32(conntrack.Count())
 	s.serviceAccess.RLock()
 	nowService := s.instance
 	s.serviceAccess.RUnlock()
+	if nowService != nil && nowService.connectionManager != nil {
+		status.ConnectionsOut = int32(nowService.connectionManager.Count())
+	}
 	if nowService != nil {
 		if clashServer := nowService.clashServer; clashServer != nil {
 			status.TrafficAvailable = true
@@ -672,6 +696,41 @@ func (s *StartedService) SetSystemProxyEnabled(ctx context.Context, request *Set
 	return nil, err
 }
 
+func (s *StartedService) TriggerDebugCrash(ctx context.Context, request *DebugCrashRequest) (*emptypb.Empty, error) {
+	if !s.debug {
+		return nil, status.Error(codes.PermissionDenied, "debug crash trigger unavailable")
+	}
+	if request == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing debug crash request")
+	}
+	switch request.Type {
+	case DebugCrashRequest_GO:
+		time.AfterFunc(200*time.Millisecond, func() {
+			panic("debug go crash")
+		})
+	case DebugCrashRequest_NATIVE:
+		err := s.handler.TriggerNativeCrash()
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, status.Error(codes.InvalidArgument, "unknown debug crash type")
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *StartedService) TriggerOOMReport(ctx context.Context, _ *emptypb.Empty) (*emptypb.Empty, error) {
+	instance := s.Instance()
+	if instance == nil {
+		return nil, status.Error(codes.FailedPrecondition, "service not started")
+	}
+	reporter := service.FromContext[oomkiller.OOMReporter](instance.ctx)
+	if reporter == nil {
+		return nil, status.Error(codes.Unavailable, "OOM reporter not available")
+	}
+	return &emptypb.Empty{}, reporter.WriteReport(memory.Total())
+}
+
 func (s *StartedService) SubscribeConnections(request *SubscribeConnectionsRequest, server grpc.ServerStreamingServer[ConnectionEvents]) error {
 	err := s.waitForStarted(server.Context())
 	if err != nil {
@@ -937,11 +996,11 @@ func buildConnectionProto(metadata *trafficontrol.TrackerMetadata) *Connection {
 	var processInfo *ProcessInfo
 	if metadata.Metadata.ProcessInfo != nil {
 		processInfo = &ProcessInfo{
-			ProcessId:   metadata.Metadata.ProcessInfo.ProcessID,
-			UserId:      metadata.Metadata.ProcessInfo.UserId,
-			UserName:    metadata.Metadata.ProcessInfo.UserName,
-			ProcessPath: metadata.Metadata.ProcessInfo.ProcessPath,
-			PackageName: metadata.Metadata.ProcessInfo.AndroidPackageName,
+			ProcessId:    metadata.Metadata.ProcessInfo.ProcessID,
+			UserId:       metadata.Metadata.ProcessInfo.UserId,
+			UserName:     metadata.Metadata.ProcessInfo.UserName,
+			ProcessPath:  metadata.Metadata.ProcessInfo.ProcessPath,
+			PackageNames: metadata.Metadata.ProcessInfo.AndroidPackageNames,
 		}
 	}
 	return &Connection{
@@ -985,7 +1044,12 @@ func (s *StartedService) CloseConnection(ctx context.Context, request *CloseConn
 }
 
 func (s *StartedService) CloseAllConnections(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
-	conntrack.Close()
+	s.serviceAccess.RLock()
+	nowService := s.instance
+	s.serviceAccess.RUnlock()
+	if nowService != nil && nowService.connectionManager != nil {
+		nowService.connectionManager.CloseAll()
+	}
 	return &emptypb.Empty{}, nil
 }
 
@@ -1001,9 +1065,12 @@ func (s *StartedService) GetDeprecatedWarnings(ctx context.Context, empty *empty
 	return &DeprecatedWarnings{
 		Warnings: common.Map(notes, func(it deprecated.Note) *DeprecatedWarning {
 			return &DeprecatedWarning{
-				Message:       it.Message(),
-				Impending:     it.Impending(),
-				MigrationLink: it.MigrationLink,
+				Message:           it.Message(),
+				Impending:         it.Impending(),
+				MigrationLink:     it.MigrationLink,
+				Description:       it.Description,
+				DeprecatedVersion: it.DeprecatedVersion,
+				ScheduledVersion:  it.ScheduledVersion,
 			}
 		}),
 	}, nil
@@ -1013,6 +1080,149 @@ func (s *StartedService) GetStartedAt(ctx context.Context, empty *emptypb.Empty)
 	s.serviceAccess.RLock()
 	defer s.serviceAccess.RUnlock()
 	return &StartedAt{StartedAt: s.startedAt.UnixMilli()}, nil
+}
+
+func (s *StartedService) ListOutbounds(ctx context.Context, _ *emptypb.Empty) (*OutboundList, error) {
+	s.serviceAccess.RLock()
+	if s.serviceStatus.Status != ServiceStatus_STARTED {
+		s.serviceAccess.RUnlock()
+		return nil, os.ErrInvalid
+	}
+	boxService := s.instance
+	s.serviceAccess.RUnlock()
+	historyStorage := boxService.urlTestHistoryStorage
+	outbounds := boxService.instance.Outbound().Outbounds()
+	var list OutboundList
+	for _, ob := range outbounds {
+		item := &GroupItem{
+			Tag:  ob.Tag(),
+			Type: ob.Type(),
+		}
+		if history := historyStorage.LoadURLTestHistory(adapter.OutboundTag(ob)); history != nil {
+			item.UrlTestTime = history.Time.Unix()
+			item.UrlTestDelay = int32(history.Delay)
+		}
+		list.Outbounds = append(list.Outbounds, item)
+	}
+	return &list, nil
+}
+
+func (s *StartedService) SubscribeOutbounds(_ *emptypb.Empty, server grpc.ServerStreamingServer[OutboundList]) error {
+	err := s.waitForStarted(server.Context())
+	if err != nil {
+		return err
+	}
+	subscription, done, err := s.urlTestObserver.Subscribe()
+	if err != nil {
+		return err
+	}
+	defer s.urlTestObserver.UnSubscribe(subscription)
+	for {
+		s.serviceAccess.RLock()
+		if s.serviceStatus.Status != ServiceStatus_STARTED {
+			s.serviceAccess.RUnlock()
+			return os.ErrInvalid
+		}
+		boxService := s.instance
+		s.serviceAccess.RUnlock()
+		historyStorage := boxService.urlTestHistoryStorage
+		outbounds := boxService.instance.Outbound().Outbounds()
+		var list OutboundList
+		for _, ob := range outbounds {
+			item := &GroupItem{
+				Tag:  ob.Tag(),
+				Type: ob.Type(),
+			}
+			if history := historyStorage.LoadURLTestHistory(adapter.OutboundTag(ob)); history != nil {
+				item.UrlTestTime = history.Time.Unix()
+				item.UrlTestDelay = int32(history.Delay)
+			}
+			list.Outbounds = append(list.Outbounds, item)
+		}
+		err = server.Send(&list)
+		if err != nil {
+			return err
+		}
+		select {
+		case <-subscription:
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		case <-server.Context().Done():
+			return server.Context().Err()
+		case <-done:
+			return nil
+		}
+	}
+}
+
+func (s *StartedService) StartNetworkQualityTest(
+	request *NetworkQualityTestRequest,
+	server grpc.ServerStreamingServer[NetworkQualityTestProgress],
+) error {
+	err := s.waitForStarted(server.Context())
+	if err != nil {
+		return err
+	}
+	s.serviceAccess.RLock()
+	boxService := s.instance
+	s.serviceAccess.RUnlock()
+
+	var outbound adapter.Outbound
+	if request.OutboundTag == "" {
+		outbound = boxService.instance.Outbound().Default()
+	} else {
+		var loaded bool
+		outbound, loaded = boxService.instance.Outbound().Outbound(request.OutboundTag)
+		if !loaded {
+			return E.New("outbound not found: ", request.OutboundTag)
+		}
+	}
+
+	resolvedDialer := dialer.NewResolveDialer(boxService.ctx, outbound, true, "", adapter.DNSQueryOptions{}, 0)
+	httpClient := networkquality.NewHTTPClient(resolvedDialer)
+	defer httpClient.CloseIdleConnections()
+
+	result, nqErr := networkquality.Run(networkquality.Options{
+		ConfigURL:  request.ConfigURL,
+		HTTPClient: httpClient,
+		Serial:     request.Serial,
+		MaxRuntime: time.Duration(request.MaxRuntimeSeconds) * time.Second,
+		Context:    server.Context(),
+		OnProgress: func(p networkquality.Progress) {
+			_ = server.Send(&NetworkQualityTestProgress{
+				Phase:                    int32(p.Phase),
+				DownloadCapacity:         p.DownloadCapacity,
+				UploadCapacity:           p.UploadCapacity,
+				DownloadRPM:              p.DownloadRPM,
+				UploadRPM:                p.UploadRPM,
+				IdleLatencyMs:            p.IdleLatencyMs,
+				ElapsedMs:                p.ElapsedMs,
+				DownloadCapacityAccuracy: int32(p.DownloadCapacityAccuracy),
+				UploadCapacityAccuracy:   int32(p.UploadCapacityAccuracy),
+				DownloadRPMAccuracy:      int32(p.DownloadRPMAccuracy),
+				UploadRPMAccuracy:        int32(p.UploadRPMAccuracy),
+			})
+		},
+	})
+	if nqErr != nil {
+		return server.Send(&NetworkQualityTestProgress{
+			IsFinal: true,
+			Error:   nqErr.Error(),
+		})
+	}
+	return server.Send(&NetworkQualityTestProgress{
+		Phase:                    int32(networkquality.PhaseDone),
+		DownloadCapacity:         result.DownloadCapacity,
+		UploadCapacity:           result.UploadCapacity,
+		DownloadRPM:              result.DownloadRPM,
+		UploadRPM:                result.UploadRPM,
+		IdleLatencyMs:            result.IdleLatencyMs,
+		IsFinal:                  true,
+		DownloadCapacityAccuracy: int32(result.DownloadCapacityAccuracy),
+		UploadCapacityAccuracy:   int32(result.UploadCapacityAccuracy),
+		DownloadRPMAccuracy:      int32(result.DownloadRPMAccuracy),
+		UploadRPMAccuracy:        int32(result.UploadRPMAccuracy),
+	})
 }
 
 func (s *StartedService) mustEmbedUnimplementedStartedServiceServer() {

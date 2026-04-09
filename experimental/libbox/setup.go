@@ -1,14 +1,22 @@
 package libbox
 
 import (
+	"fmt"
+	"math"
 	"os"
+	"path/filepath"
+	"runtime"
 	"runtime/debug"
+	"strings"
 	"time"
 
+	"github.com/sagernet/sing-box/common/networkquality"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/experimental/locale"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/service/oomkiller"
 	"github.com/sagernet/sing/common/byteformats"
+	E "github.com/sagernet/sing/common/exceptions"
 )
 
 var (
@@ -22,6 +30,10 @@ var (
 	sCommandServerSecret     string
 	sLogMaxLines             int
 	sDebug                   bool
+	sCrashReportSource       string
+	sOOMKillerEnabled        bool
+	sOOMKillerDisabled       bool
+	sOOMMemoryLimit          int64
 )
 
 func init() {
@@ -38,9 +50,13 @@ type SetupOptions struct {
 	CommandServerSecret     string
 	LogMaxLines             int
 	Debug                   bool
+	CrashReportSource       string
+	OomKillerEnabled        bool
+	OomKillerDisabled       bool
+	OomMemoryLimit          int64
 }
 
-func Setup(options *SetupOptions) error {
+func applySetupOptions(options *SetupOptions) {
 	sBasePath = options.BasePath
 	sWorkingPath = options.WorkingPath
 	sTempPath = options.TempPath
@@ -56,18 +72,51 @@ func Setup(options *SetupOptions) error {
 	sCommandServerSecret = options.CommandServerSecret
 	sLogMaxLines = options.LogMaxLines
 	sDebug = options.Debug
-
-	os.MkdirAll(sWorkingPath, 0o777)
-	os.MkdirAll(sTempPath, 0o777)
-	return nil
+	sCrashReportSource = options.CrashReportSource
+	ReloadSetupOptions(options)
 }
 
-func SetLocale(localeId string) {
-	locale.Set(localeId)
+func ReloadSetupOptions(options *SetupOptions) {
+	sOOMKillerEnabled = options.OomKillerEnabled
+	sOOMKillerDisabled = options.OomKillerDisabled
+	sOOMMemoryLimit = options.OomMemoryLimit
+	if sOOMKillerEnabled {
+		if sOOMMemoryLimit == 0 && C.IsIos {
+			sOOMMemoryLimit = oomkiller.DefaultAppleNetworkExtensionMemoryLimit
+		}
+		if sOOMMemoryLimit > 0 {
+			debug.SetMemoryLimit(sOOMMemoryLimit * 3 / 4)
+		} else {
+			debug.SetMemoryLimit(math.MaxInt64)
+		}
+	} else {
+		debug.SetMemoryLimit(math.MaxInt64)
+	}
+}
+
+func Setup(options *SetupOptions) error {
+	applySetupOptions(options)
+	os.MkdirAll(sWorkingPath, 0o777)
+	os.MkdirAll(sTempPath, 0o777)
+	return redirectStderr(filepath.Join(sWorkingPath, "CrashReport-"+sCrashReportSource+".log"))
+}
+
+func SetLocale(localeId string) error {
+	if strings.Contains(localeId, "@") {
+		localeId = strings.Split(localeId, "@")[0]
+	}
+	if !locale.Set(localeId) {
+		return E.New("unsupported locale: ", localeId)
+	}
+	return nil
 }
 
 func Version() string {
 	return C.Version
+}
+
+func GoVersion() string {
+	return runtime.Version() + ", " + runtime.GOOS + "/" + runtime.GOARCH
 }
 
 func FormatBytes(length int64) string {
@@ -81,6 +130,29 @@ func FormatMemoryBytes(length int64) string {
 func FormatDuration(duration int64) string {
 	return log.FormatDuration(time.Duration(duration) * time.Millisecond)
 }
+
+func FormatBitrate(bps int64) string {
+	switch {
+	case bps >= 1_000_000_000:
+		return fmt.Sprintf("%.1f Gbps", float64(bps)/1_000_000_000)
+	case bps >= 1_000_000:
+		return fmt.Sprintf("%.1f Mbps", float64(bps)/1_000_000)
+	case bps >= 1_000:
+		return fmt.Sprintf("%.1f Kbps", float64(bps)/1_000)
+	default:
+		return fmt.Sprintf("%d bps", bps)
+	}
+}
+
+const NetworkQualityDefaultConfigURL = networkquality.DefaultConfigURL
+
+const NetworkQualityDefaultMaxRuntimeSeconds = int32(networkquality.DefaultMaxRuntime / time.Second)
+
+const (
+	NetworkQualityAccuracyLow    = int32(networkquality.AccuracyLow)
+	NetworkQualityAccuracyMedium = int32(networkquality.AccuracyMedium)
+	NetworkQualityAccuracyHigh   = int32(networkquality.AccuracyHigh)
+)
 
 func ProxyDisplayType(proxyType string) string {
 	return C.ProxyDisplayName(proxyType)

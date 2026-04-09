@@ -29,7 +29,10 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
-var ConfigureHTTP3ListenerFunc func(ctx context.Context, logger logger.Logger, listener *listener.Listener, handler http.Handler, tlsConfig tls.ServerConfig, options option.NaiveInboundOptions) (io.Closer, error)
+var (
+	ConfigureHTTP3ListenerFunc func(ctx context.Context, logger logger.Logger, listener *listener.Listener, handler http.Handler, tlsConfig tls.ServerConfig, options option.NaiveInboundOptions) (io.Closer, error)
+	WrapError                  func(error) error
+)
 
 func RegisterInbound(registry *inbound.Registry) {
 	inbound.Register[option.NaiveInboundOptions](registry, C.TypeNaive, NewInbound)
@@ -209,7 +212,6 @@ func (n *Inbound) newConnection(ctx context.Context, waitForClose bool, conn net
 	//nolint:staticcheck
 	metadata.InboundDetour = n.listener.ListenOptions().Detour
 	//nolint:staticcheck
-	metadata.InboundOptions = n.listener.ListenOptions().InboundOptions
 	metadata.Source = source
 	metadata.Destination = destination
 	metadata.OriginDestination = M.SocksaddrFromNet(conn.LocalAddr()).Unwrap()
