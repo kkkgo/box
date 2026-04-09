@@ -29,11 +29,9 @@ func NewRuleSetItem(router adapter.Router, tagList []string, ipCIDRMatchSource b
 }
 
 func (r *RuleSetItem) Start() error {
-	_ = r.Close()
 	for _, tag := range r.tagList {
 		ruleSet, loaded := r.router.RuleSet(tag)
 		if !loaded {
-			_ = r.Close()
 			return E.New("rule-set not found: ", tag)
 		}
 		ruleSet.IncRef()
@@ -42,33 +40,15 @@ func (r *RuleSetItem) Start() error {
 	return nil
 }
 
-func (r *RuleSetItem) Close() error {
-	for _, ruleSet := range r.setList {
-		ruleSet.DecRef()
-	}
-	clear(r.setList)
-	r.setList = nil
-	return nil
-}
-
 func (r *RuleSetItem) Match(metadata *adapter.InboundContext) bool {
-	return !r.matchStates(metadata).isEmpty()
-}
-
-func (r *RuleSetItem) matchStates(metadata *adapter.InboundContext) ruleMatchStateSet {
-	return r.matchStatesWithBase(metadata, 0)
-}
-
-func (r *RuleSetItem) matchStatesWithBase(metadata *adapter.InboundContext, base ruleMatchState) ruleMatchStateSet {
-	var stateSet ruleMatchStateSet
+	metadata.IPCIDRMatchSource = r.ipCidrMatchSource
+	metadata.IPCIDRAcceptEmpty = r.ipCidrAcceptEmpty
 	for _, ruleSet := range r.setList {
-		nestedMetadata := *metadata
-		nestedMetadata.ResetRuleMatchCache()
-		nestedMetadata.IPCIDRMatchSource = r.ipCidrMatchSource
-		nestedMetadata.IPCIDRAcceptEmpty = r.ipCidrAcceptEmpty
-		stateSet = stateSet.merge(matchHeadlessRuleStatesWithBase(ruleSet, &nestedMetadata, base))
+		if ruleSet.Match(metadata) {
+			return true
+		}
 	}
-	return stateSet
+	return false
 }
 
 func (r *RuleSetItem) ContainsDestinationIPCIDRRule() bool {

@@ -18,8 +18,6 @@ type Store struct {
 	logger     logger.Logger
 	inet4Range netip.Prefix
 	inet6Range netip.Prefix
-	inet4Last  netip.Addr
-	inet6Last  netip.Addr
 	storage    adapter.FakeIPStorage
 
 	addressAccess sync.Mutex
@@ -28,35 +26,12 @@ type Store struct {
 }
 
 func NewStore(ctx context.Context, logger logger.Logger, inet4Range netip.Prefix, inet6Range netip.Prefix) *Store {
-	store := &Store{
+	return &Store{
 		ctx:        ctx,
 		logger:     logger,
 		inet4Range: inet4Range,
 		inet6Range: inet6Range,
 	}
-	if inet4Range.IsValid() {
-		store.inet4Last = broadcastAddress(inet4Range)
-	}
-	if inet6Range.IsValid() {
-		store.inet6Last = broadcastAddress(inet6Range)
-	}
-	return store
-}
-
-func broadcastAddress(prefix netip.Prefix) netip.Addr {
-	addr := prefix.Addr()
-	raw := addr.As16()
-	bits := prefix.Bits()
-	if addr.Is4() {
-		bits += 96
-	}
-	for i := bits; i < 128; i++ {
-		raw[i/8] |= 1 << (7 - i%8)
-	}
-	if addr.Is4() {
-		return netip.AddrFrom4([4]byte(raw[12:]))
-	}
-	return netip.AddrFrom16(raw)
 }
 
 func (s *Store) Start() error {
@@ -74,10 +49,10 @@ func (s *Store) Start() error {
 		s.inet6Current = metadata.Inet6Current
 	} else {
 		if s.inet4Range.IsValid() {
-			s.inet4Current = s.inet4Range.Addr().Next()
+			s.inet4Current = s.inet4Range.Addr().Next().Next()
 		}
 		if s.inet6Range.IsValid() {
-			s.inet6Current = s.inet6Range.Addr().Next()
+			s.inet6Current = s.inet6Range.Addr().Next().Next()
 		}
 		_ = storage.FakeIPReset()
 	}
@@ -123,7 +98,7 @@ func (s *Store) Create(domain string, isIPv6 bool) (netip.Addr, error) {
 			return netip.Addr{}, E.New("missing IPv4 fakeip address range")
 		}
 		nextAddress := s.inet4Current.Next()
-		if nextAddress == s.inet4Last || !s.inet4Range.Contains(nextAddress) {
+		if !s.inet4Range.Contains(nextAddress) {
 			nextAddress = s.inet4Range.Addr().Next().Next()
 		}
 		s.inet4Current = nextAddress
@@ -133,7 +108,7 @@ func (s *Store) Create(domain string, isIPv6 bool) (netip.Addr, error) {
 			return netip.Addr{}, E.New("missing IPv6 fakeip address range")
 		}
 		nextAddress := s.inet6Current.Next()
-		if nextAddress == s.inet6Last || !s.inet6Range.Contains(nextAddress) {
+		if !s.inet6Range.Contains(nextAddress) {
 			nextAddress = s.inet6Range.Addr().Next().Next()
 		}
 		s.inet6Current = nextAddress

@@ -95,7 +95,7 @@ UDP over TCP 配置。
 
 #### multiplex
 
-参阅 [多路复用](/zh/configuration/shared/multiplex#出站)。
+参阅 [多路复用](/zh/configuration/shared/multiplex#outbound)。
 
 ### 拨号字段
 

@@ -52,7 +52,7 @@ func NewServer(ctx context.Context, logger logger.ContextLogger, options option.
 }
 
 func (s *Server) Tun(server GunService_TunServer) error {
-	conn := NewGRPCConn(server, nil)
+	conn := NewGRPCConn(server)
 	var source M.Socksaddr
 	if remotePeer, loaded := peer.FromContext(server.Context()); loaded {
 		source = M.SocksaddrFromNet(remotePeer.Addr)

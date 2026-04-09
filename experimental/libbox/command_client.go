@@ -47,7 +47,6 @@ type CommandClientHandler interface {
 	WriteLogs(messageList LogIterator)
 	WriteStatus(message *StatusMessage)
 	WriteGroups(message OutboundGroupIterator)
-	WriteOutbounds(message OutboundGroupItemIterator)
 	InitializeClashMode(modeList StringIterator, currentMode string)
 	UpdateClashMode(newMode string)
 	WriteConnectionEvents(events *ConnectionEvents)
@@ -120,11 +119,7 @@ func dialTarget() (string, func(context.Context, string) (net.Conn, error)) {
 		}
 	}
 	if sCommandServerListenPort == 0 {
-		socketPath := filepath.Join(sBasePath, "command.sock")
-		return "passthrough:///command-socket", func(ctx context.Context, _ string) (net.Conn, error) {
-			var networkDialer net.Dialer
-			return networkDialer.DialContext(ctx, "unix", socketPath)
-		}
+		return "unix://" + filepath.Join(sBasePath, "command.sock"), nil
 	}
 	return net.JoinHostPort("127.0.0.1", strconv.Itoa(int(sCommandServerListenPort))), nil
 }
@@ -244,8 +239,6 @@ func (c *CommandClient) dispatchCommands() error {
 			go c.handleClashModeStream()
 		case CommandConnections:
 			go c.handleConnectionsStream()
-		case CommandOutbounds:
-			go c.handleOutboundsStream()
 		default:
 			return E.New("unknown command: ", command)
 		}
@@ -369,7 +362,7 @@ func (c *CommandClient) handleStatusStream() {
 			c.handler.Disconnected(err.Error())
 			return
 		}
-		c.handler.WriteStatus(statusMessageFromGRPC(status))
+		c.handler.WriteStatus(StatusMessageFromGRPC(status))
 	}
 }
 
@@ -388,7 +381,7 @@ func (c *CommandClient) handleGroupStream() {
 			c.handler.Disconnected(err.Error())
 			return
 		}
-		c.handler.WriteGroups(outboundGroupIteratorFromGRPC(groups))
+		c.handler.WriteGroups(OutboundGroupIteratorFromGRPC(groups))
 	}
 }
 
@@ -454,27 +447,8 @@ func (c *CommandClient) handleConnectionsStream() {
 			c.handler.Disconnected(err.Error())
 			return
 		}
-		libboxEvents := connectionEventsFromGRPC(events)
+		libboxEvents := ConnectionEventsFromGRPC(events)
 		c.handler.WriteConnectionEvents(libboxEvents)
-	}
-}
-
-func (c *CommandClient) handleOutboundsStream() {
-	client, ctx := c.getStreamContext()
-
-	stream, err := client.SubscribeOutbounds(ctx, &emptypb.Empty{})
-	if err != nil {
-		c.handler.Disconnected(err.Error())
-		return
-	}
-
-	for {
-		list, err := stream.Recv()
-		if err != nil {
-			c.handler.Disconnected(err.Error())
-			return
-		}
-		c.handler.WriteOutbounds(outboundGroupItemListFromGRPC(list))
 	}
 }
 
@@ -549,7 +523,7 @@ func (c *CommandClient) GetSystemProxyStatus() (*SystemProxyStatus, error) {
 		if err != nil {
 			return nil, err
 		}
-		return systemProxyStatusFromGRPC(status), nil
+		return SystemProxyStatusFromGRPC(status), nil
 	})
 }
 
@@ -558,31 +532,6 @@ func (c *CommandClient) SetSystemProxyEnabled(isEnabled bool) error {
 		return client.SetSystemProxyEnabled(context.Background(), &daemon.SetSystemProxyEnabledRequest{
 			Enabled: isEnabled,
 		})
-	})
-	return err
-}
-
-func (c *CommandClient) TriggerGoCrash() error {
-	_, err := callWithResult(c, func(client daemon.StartedServiceClient) (*emptypb.Empty, error) {
-		return client.TriggerDebugCrash(context.Background(), &daemon.DebugCrashRequest{
-			Type: daemon.DebugCrashRequest_GO,
-		})
-	})
-	return err
-}
-
-func (c *CommandClient) TriggerNativeCrash() error {
-	_, err := callWithResult(c, func(client daemon.StartedServiceClient) (*emptypb.Empty, error) {
-		return client.TriggerDebugCrash(context.Background(), &daemon.DebugCrashRequest{
-			Type: daemon.DebugCrashRequest_NATIVE,
-		})
-	})
-	return err
-}
-
-func (c *CommandClient) TriggerOOMReport() error {
-	_, err := callWithResult(c, func(client daemon.StartedServiceClient) (*emptypb.Empty, error) {
-		return client.TriggerOOMReport(context.Background(), &emptypb.Empty{})
 	})
 	return err
 }
@@ -596,10 +545,8 @@ func (c *CommandClient) GetDeprecatedNotes() (DeprecatedNoteIterator, error) {
 		var notes []*DeprecatedNote
 		for _, warning := range warnings.Warnings {
 			notes = append(notes, &DeprecatedNote{
-				Description:       warning.Description,
-				DeprecatedVersion: warning.DeprecatedVersion,
-				ScheduledVersion:  warning.ScheduledVersion,
-				MigrationLink:     warning.MigrationLink,
+				Description:   warning.Message,
+				MigrationLink: warning.MigrationLink,
 			})
 		}
 		return newIterator(notes), nil
@@ -624,79 +571,4 @@ func (c *CommandClient) SetGroupExpand(groupTag string, isExpand bool) error {
 		})
 	})
 	return err
-}
-
-func (c *CommandClient) ListOutbounds() (OutboundGroupItemIterator, error) {
-	return callWithResult(c, func(client daemon.StartedServiceClient) (OutboundGroupItemIterator, error) {
-		list, err := client.ListOutbounds(context.Background(), &emptypb.Empty{})
-		if err != nil {
-			return nil, err
-		}
-		return outboundGroupItemListFromGRPC(list), nil
-	})
-}
-
-func (c *CommandClient) StartNetworkQualityTest(configURL string, outboundTag string, handler NetworkQualityTestHandler) error {
-	return c.StartNetworkQualityTestWithSerialAndRuntime(
-		configURL,
-		outboundTag,
-		false,
-		NetworkQualityDefaultMaxRuntimeSeconds,
-		handler,
-	)
-}
-
-func (c *CommandClient) StartNetworkQualityTestWithSerial(configURL string, outboundTag string, serial bool, handler NetworkQualityTestHandler) error {
-	return c.StartNetworkQualityTestWithSerialAndRuntime(
-		configURL,
-		outboundTag,
-		serial,
-		NetworkQualityDefaultMaxRuntimeSeconds,
-		handler,
-	)
-}
-
-func (c *CommandClient) StartNetworkQualityTestWithSerialAndRuntime(configURL string, outboundTag string, serial bool, maxRuntimeSeconds int32, handler NetworkQualityTestHandler) error {
-	client, err := c.getClientForCall()
-	if err != nil {
-		return err
-	}
-	if c.standalone {
-		defer c.closeConnection()
-	}
-	stream, err := client.StartNetworkQualityTest(context.Background(), &daemon.NetworkQualityTestRequest{
-		ConfigURL:         configURL,
-		OutboundTag:       outboundTag,
-		Serial:            serial,
-		MaxRuntimeSeconds: maxRuntimeSeconds,
-	})
-	if err != nil {
-		return err
-	}
-	for {
-		event, recvErr := stream.Recv()
-		if recvErr != nil {
-			handler.OnError(recvErr.Error())
-			return recvErr
-		}
-		if event.IsFinal {
-			if event.Error != "" {
-				handler.OnError(event.Error)
-			} else {
-				handler.OnResult(&NetworkQualityResult{
-					DownloadCapacity:         event.DownloadCapacity,
-					UploadCapacity:           event.UploadCapacity,
-					DownloadRPM:              event.DownloadRPM,
-					UploadRPM:                event.UploadRPM,
-					IdleLatencyMs:            event.IdleLatencyMs,
-					DownloadCapacityAccuracy: event.DownloadCapacityAccuracy,
-					UploadCapacityAccuracy:   event.UploadCapacityAccuracy,
-					DownloadRPMAccuracy:      event.DownloadRPMAccuracy,
-					UploadRPMAccuracy:        event.UploadRPMAccuracy,
-				})
-			}
-			return nil
-		}
-		handler.OnProgress(networkQualityProgressFromGRPC(event))
-	}
 }

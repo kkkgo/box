@@ -48,11 +48,11 @@ VLESS 子协议。
 
 #### tls
 
-TLS 配置, 参阅 [TLS](/zh/configuration/shared/tls/#入站)。
+TLS 配置, 参阅 [TLS](/zh/configuration/shared/tls/#inbound)。
 
 #### multiplex
 
-参阅 [多路复用](/zh/configuration/shared/multiplex#入站)。
+参阅 [多路复用](/zh/configuration/shared/multiplex#inbound)。
 
 #### transport
 

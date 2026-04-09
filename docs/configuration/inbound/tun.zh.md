@@ -2,21 +2,11 @@
 icon: material/new-box
 ---
 
-!!! quote "sing-box 1.14.0 中的更改"
-
-    :material-plus: [include_mac_address](#include_mac_address)  
-    :material-plus: [exclude_mac_address](#exclude_mac_address)
-
-!!! quote "sing-box 1.13.3 中的更改"
-
-    :material-alert: [strict_route](#strict_route)
-
 !!! quote "sing-box 1.13.0 中的更改"
 
     :material-plus: [auto_redirect_reset_mark](#auto_redirect_reset_mark)  
     :material-plus: [auto_redirect_nfqueue](#auto_redirect_nfqueue)  
-    :material-plus: [exclude_mptcp](#exclude_mptcp)  
-    :material-plus: [auto_redirect_iproute2_fallback_rule_index](#auto_redirect_iproute2_fallback_rule_index)
+    :material-plus: [exclude_mptcp](#exclude_mptcp)
 
 !!! quote "sing-box 1.12.0 中的更改"
 
@@ -81,7 +71,6 @@ icon: material/new-box
   "auto_redirect_output_mark": "0x2024",
   "auto_redirect_reset_mark": "0x2025",
   "auto_redirect_nfqueue": 100,
-  "auto_redirect_iproute2_fallback_rule_index": 32768,
   "exclude_mptcp": false,
   "loopback_address": [
     "10.7.0.1"
@@ -134,12 +123,6 @@ icon: material/new-box
   ],
   "exclude_package": [
     "com.android.captiveportallogin"
-  ],
-  "include_mac_address": [
-    "00:11:22:33:44:55"
-  ],
-  "exclude_mac_address": [
-    "66:77:88:99:aa:bb"
   ],
   "platform": {
     "http_proxy": {
@@ -319,24 +302,13 @@ tun 接口的 IPv6 前缀。
 
 默认使用 `100`。
 
-#### auto_redirect_iproute2_fallback_rule_index
-
-!!! question "自 sing-box 1.12.18 起"
-
-`auto_redirect` 生成的 iproute2 回退规则索引。
-
-此规则在系统默认规则（32766: main，32767: default）之后检查，
-仅当系统路由表中未找到路由时才将流量路由到 sing-box 路由表。
-
-默认使用 `32768`。
-
 #### exclude_mptcp
 
 !!! question "自 sing-box 1.13.0 起"
 
 !!! quote ""
 
-    仅支持 Linux，且需要 nftables，`auto_route` 和 `auto_redirect` 已启用。
+    仅支持 Linux，且需要 nftables，`auto_route` 和 `auto_redirect` 已启用。 
 
 由于协议限制，MPTCP 无法被透明代理。
 
@@ -362,9 +334,6 @@ tun 接口的 IPv6 前缀。
 
 * 使不支持的网络不可达。
 * 出于历史遗留原因，当未启用 `strict_route` 或 `auto_redirect` 时，所有 ICMP 流量将不会通过 TUN。
-* 当启用 `auto_redirect` 时，`strict_route` 也影响 `SO_BINDTODEVICE` 流量：
-    * 启用：`SO_BINDTODEVICE` 流量被重定向通过 sing-box。
-    * 禁用：`SO_BINDTODEVICE` 流量绕过 sing-box。
 
 *在 Windows 中*：
 
@@ -553,30 +522,6 @@ TCP/IP 栈。
 #### exclude_package
 
 排除路由的 Android 应用包名。
-
-#### include_mac_address
-
-!!! question "自 sing-box 1.14.0 起"
-
-!!! quote ""
-
-    仅支持 Linux，且需要 `auto_route` 和 `auto_redirect` 已启用。
-
-限制被路由的 MAC 地址。默认不限制。
-
-与 `exclude_mac_address` 冲突。
-
-#### exclude_mac_address
-
-!!! question "自 sing-box 1.14.0 起"
-
-!!! quote ""
-
-    仅支持 Linux，且需要 `auto_route` 和 `auto_redirect` 已启用。
-
-排除路由的 MAC 地址。
-
-与 `include_mac_address` 冲突。
 
 #### platform
 

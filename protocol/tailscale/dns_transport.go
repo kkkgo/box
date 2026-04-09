@@ -1,5 +1,3 @@
-//go:build with_gvisor
-
 package tailscale
 
 import (
@@ -287,7 +285,7 @@ type DNSDialer struct {
 }
 
 func (d *DNSDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
-	if destination.IsDomain() {
+	if destination.IsFqdn() {
 		panic("invalid request here")
 	}
 	for _, prefix := range d.transport.routePrefixes {
@@ -299,7 +297,7 @@ func (d *DNSDialer) DialContext(ctx context.Context, network string, destination
 }
 
 func (d *DNSDialer) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
-	if destination.IsDomain() {
+	if destination.IsFqdn() {
 		panic("invalid request here")
 	}
 	for _, prefix := range d.transport.routePrefixes {

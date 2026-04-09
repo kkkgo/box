@@ -49,7 +49,7 @@ ShadowTLS 协议版本。
 
 ==必填==
 
-TLS 配置, 参阅 [TLS](/zh/configuration/shared/tls/#出站)。
+TLS 配置, 参阅 [TLS](/zh/configuration/shared/tls/#outbound)。
 
 ### 拨号字段
 

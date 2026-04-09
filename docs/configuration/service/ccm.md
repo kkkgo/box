@@ -66,19 +66,7 @@ List of authorized users for token authentication.
 
 If empty, no authentication is required.
 
-Object format:
-
-```json
-{
-  "name": "",
-  "token": ""
-}
-```
-
-Object fields:
-
-- `name`: Username identifier for tracking purposes.
-- `token`: Bearer token for authentication. Claude Code authenticates by setting the `ANTHROPIC_AUTH_TOKEN` environment variable to their token value.
+Claude Code authenticates by setting the `ANTHROPIC_AUTH_TOKEN` environment variable to their token value.
 
 #### headers
 
@@ -96,36 +84,23 @@ TLS configuration, see [TLS](/configuration/shared/tls/#inbound).
 
 ### Example
 
-#### Server
-
 ```json
 {
   "services": [
     {
       "type": "ccm",
-      "listen": "0.0.0.0",
-      "listen_port": 8080,
-      "usages_path": "./claude-usages.json",
-      "users": [
-        {
-          "name": "alice",
-          "token": "ak-ccm-hello-world"
-        },
-        {
-          "name": "bob",
-          "token": "ak-ccm-hello-bob"
-        }
-      ]
+      "listen": "127.0.0.1",
+      "listen_port": 8080
     }
   ]
 }
 ```
 
-#### Client
+Connect to the CCM service:
 
 ```bash
 export ANTHROPIC_BASE_URL="http://127.0.0.1:8080"
-export ANTHROPIC_AUTH_TOKEN="ak-ccm-hello-world"
+export ANTHROPIC_AUTH_TOKEN="sk-ant-ccm-auth-token-not-required-in-this-context"
 
 claude
 ```

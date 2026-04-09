@@ -24,10 +24,7 @@ import (
 	"github.com/sagernet/sing/service"
 )
 
-var (
-	_ adapter.OutboundWithPreferredRoutes = (*Endpoint)(nil)
-	_ dialer.PacketDialerWithDestination  = (*Endpoint)(nil)
-)
+var _ adapter.OutboundWithPreferredRoutes = (*Endpoint)(nil)
 
 func RegisterEndpoint(registry *endpoint.Registry) {
 	endpoint.Register[option.WireGuardEndpointOptions](registry, C.TypeWireGuard, NewEndpoint)
@@ -210,7 +207,7 @@ func (w *Endpoint) DialContext(ctx context.Context, network string, destination 
 	case N.NetworkUDP:
 		w.logger.InfoContext(ctx, "outbound packet connection to ", destination)
 	}
-	if destination.IsDomain() {
+	if destination.IsFqdn() {
 		destinationAddresses, err := w.dnsRouter.Lookup(ctx, destination.Fqdn, adapter.DNSQueryOptions{})
 		if err != nil {
 			return nil, err
@@ -222,34 +219,20 @@ func (w *Endpoint) DialContext(ctx context.Context, network string, destination 
 	return w.endpoint.DialContext(ctx, network, destination)
 }
 
-func (w *Endpoint) ListenPacketWithDestination(ctx context.Context, destination M.Socksaddr) (net.PacketConn, netip.Addr, error) {
+func (w *Endpoint) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
 	w.logger.InfoContext(ctx, "outbound packet connection to ", destination)
-	if destination.IsDomain() {
+	if destination.IsFqdn() {
 		destinationAddresses, err := w.dnsRouter.Lookup(ctx, destination.Fqdn, adapter.DNSQueryOptions{})
 		if err != nil {
-			return nil, netip.Addr{}, err
+			return nil, err
 		}
-		return N.ListenSerial(ctx, w.endpoint, destination, destinationAddresses)
+		packetConn, _, err := N.ListenSerial(ctx, w.endpoint, destination, destinationAddresses)
+		if err != nil {
+			return nil, err
+		}
+		return packetConn, err
 	}
-	packetConn, err := w.endpoint.ListenPacket(ctx, destination)
-	if err != nil {
-		return nil, netip.Addr{}, err
-	}
-	if destination.IsIP() {
-		return packetConn, destination.Addr, nil
-	}
-	return packetConn, netip.Addr{}, nil
-}
-
-func (w *Endpoint) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
-	packetConn, destinationAddress, err := w.ListenPacketWithDestination(ctx, destination)
-	if err != nil {
-		return nil, err
-	}
-	if destinationAddress.IsValid() && destination != M.SocksaddrFrom(destinationAddress, destination.Port) {
-		return bufio.NewNATPacketConn(bufio.NewPacketConn(packetConn), M.SocksaddrFrom(destinationAddress, destination.Port), destination), nil
-	}
-	return packetConn, nil
+	return w.endpoint.ListenPacket(ctx, destination)
 }
 
 func (w *Endpoint) PreferredDomain(domain string) bool {

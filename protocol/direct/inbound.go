@@ -111,6 +111,7 @@ func (i *Inbound) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, 
 	//nolint:staticcheck
 	metadata.InboundDetour = i.listener.ListenOptions().Detour
 	//nolint:staticcheck
+	metadata.InboundOptions = i.listener.ListenOptions().InboundOptions
 	metadata.Source = source
 	destination = i.listener.UDPAddr()
 	switch i.overrideOption {

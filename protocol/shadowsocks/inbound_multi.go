@@ -175,6 +175,7 @@ func (h *MultiInbound) newConnection(ctx context.Context, conn net.Conn, metadat
 	//nolint:staticcheck
 	metadata.InboundDetour = h.listener.ListenOptions().Detour
 	//nolint:staticcheck
+	metadata.InboundOptions = h.listener.ListenOptions().InboundOptions
 	if h.tracker != nil {
 		conn = h.tracker.TrackConnection(conn, metadata)
 	}
@@ -200,6 +201,7 @@ func (h *MultiInbound) newPacketConnection(ctx context.Context, conn N.PacketCon
 	//nolint:staticcheck
 	metadata.InboundDetour = h.listener.ListenOptions().Detour
 	//nolint:staticcheck
+	metadata.InboundOptions = h.listener.ListenOptions().InboundOptions
 	if h.tracker != nil {
 		conn = h.tracker.TrackPacketConnection(conn, metadata)
 	}

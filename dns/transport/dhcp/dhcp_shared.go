@@ -7,6 +7,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/sagernet/sing-box/dns"
 	"github.com/sagernet/sing-box/dns/transport"
 	"github.com/sagernet/sing/common/buf"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -39,6 +40,13 @@ func (t *Transport) exchangeParallel(ctx context.Context, servers []M.Socksaddr,
 	results := make(chan queryResult)
 	startRacer := func(ctx context.Context, fqdn string) {
 		response, err := t.tryOneName(ctx, servers, fqdn, message)
+		if err == nil {
+			if response.Rcode != mDNS.RcodeSuccess {
+				err = dns.RcodeError(response.Rcode)
+			} else if len(dns.MessageToAddresses(response)) == 0 {
+				err = dns.RcodeSuccess
+			}
+		}
 		select {
 		case results <- queryResult{response, err}:
 		case <-returned:

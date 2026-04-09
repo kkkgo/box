@@ -21,28 +21,13 @@ type PlatformInterface interface {
 	SystemCertificates() StringIterator
 	ClearDNSCache()
 	SendNotification(notification *Notification) error
-	StartNeighborMonitor(listener NeighborUpdateListener) error
-	CloseNeighborMonitor(listener NeighborUpdateListener) error
-	RegisterMyInterface(name string)
-}
-
-type NeighborUpdateListener interface {
-	UpdateNeighborTable(entries NeighborEntryIterator)
 }
 
 type ConnectionOwner struct {
-	UserId              int32
-	UserName            string
-	ProcessPath         string
-	androidPackageNames []string
-}
-
-func (c *ConnectionOwner) SetAndroidPackageNames(names StringIterator) {
-	c.androidPackageNames = iteratorToArray[string](names)
-}
-
-func (c *ConnectionOwner) AndroidPackageNames() StringIterator {
-	return newIterator(c.androidPackageNames)
+	UserId             int32
+	UserName           string
+	ProcessPath        string
+	AndroidPackageName string
 }
 
 type InterfaceUpdateListener interface {

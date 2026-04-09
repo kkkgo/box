@@ -15,6 +15,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/dns"
+	"github.com/sagernet/sing-box/experimental/deprecated"
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
 	aTLS "github.com/sagernet/sing/common/tls"
@@ -37,7 +38,7 @@ func parseECHClientConfig(ctx context.Context, clientConfig ECHCapableConfig, op
 	}
 	//nolint:staticcheck
 	if options.ECH.PQSignatureSchemesEnabled || options.ECH.DynamicRecordSizingDisabled {
-		return nil, E.New("legacy ECH options are deprecated in sing-box 1.12.0 and removed in sing-box 1.13.0")
+		deprecated.Report(ctx, deprecated.OptionLegacyECHOptions)
 	}
 	if len(echConfig) > 0 {
 		block, rest := pem.Decode(echConfig)
@@ -76,7 +77,7 @@ func parseECHServerConfig(ctx context.Context, options option.InboundTLSOptions,
 	tlsConfig.EncryptedClientHelloKeys = echKeys
 	//nolint:staticcheck
 	if options.ECH.PQSignatureSchemesEnabled || options.ECH.DynamicRecordSizingDisabled {
-		return E.New("legacy ECH options are deprecated in sing-box 1.12.0 and removed in sing-box 1.13.0")
+		deprecated.Report(ctx, deprecated.OptionLegacyECHOptions)
 	}
 	return nil
 }
