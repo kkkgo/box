@@ -137,10 +137,11 @@ func (s *LocalRuleSet) reloadRules(headlessRules []option.HeadlessRule) error {
 			return E.Cause(err, "parse rule_set.rules.[", i, "]")
 		}
 	}
-	var metadata adapter.RuleSetMetadata
-	metadata.ContainsProcessRule = HasHeadlessRule(headlessRules, isProcessHeadlessRule)
-	metadata.ContainsWIFIRule = HasHeadlessRule(headlessRules, isWIFIHeadlessRule)
-	metadata.ContainsIPCIDRRule = HasHeadlessRule(headlessRules, isIPCIDRHeadlessRule)
+	metadata := buildRuleSetMetadata(headlessRules)
+	err = validateRuleSetMetadataUpdate(s.ctx, s.tag, metadata)
+	if err != nil {
+		return err
+	}
 	s.access.Lock()
 	s.rules = rules
 	s.metadata = metadata
@@ -202,10 +203,19 @@ func (s *LocalRuleSet) Close() error {
 }
 
 func (s *LocalRuleSet) Match(metadata *adapter.InboundContext) bool {
+	return !s.matchStates(metadata).isEmpty()
+}
+
+func (s *LocalRuleSet) matchStates(metadata *adapter.InboundContext) ruleMatchStateSet {
+	return s.matchStatesWithBase(metadata, 0)
+}
+
+func (s *LocalRuleSet) matchStatesWithBase(metadata *adapter.InboundContext, base ruleMatchState) ruleMatchStateSet {
+	var stateSet ruleMatchStateSet
 	for _, rule := range s.rules {
-		if rule.Match(metadata) {
-			return true
-		}
+		nestedMetadata := *metadata
+		nestedMetadata.ResetRuleMatchCache()
+		stateSet = stateSet.merge(matchHeadlessRuleStatesWithBase(rule, &nestedMetadata, base))
 	}
-	return false
+	return stateSet
 }

@@ -39,11 +39,12 @@ type CommandServerHandler interface {
 	ServiceReload() error
 	GetSystemProxyStatus() (*SystemProxyStatus, error)
 	SetSystemProxyEnabled(enabled bool) error
+	TriggerNativeCrash() error
 	WriteDebugMessage(message string)
 }
 
 func NewCommandServer(handler CommandServerHandler, platformInterface PlatformInterface) (*CommandServer, error) {
-	ctx := BaseContext(platformInterface)
+	ctx := baseContext(platformInterface)
 	platformWrapper := &platformInterfaceWrapper{
 		iif:       platformInterface,
 		useProcFS: platformInterface.UseProcFS(),
@@ -57,9 +58,12 @@ func NewCommandServer(handler CommandServerHandler, platformInterface PlatformIn
 	server.StartedService = daemon.NewStartedService(daemon.ServiceOptions{
 		Context: ctx,
 		// Platform:         platformWrapper,
-		Handler:     (*platformHandler)(server),
-		Debug:       sDebug,
-		LogMaxLines: sLogMaxLines,
+		Handler:           (*platformHandler)(server),
+		Debug:             sDebug,
+		LogMaxLines:       sLogMaxLines,
+		OOMKillerEnabled:  sOOMKillerEnabled,
+		OOMKillerDisabled: sOOMKillerDisabled,
+		OOMMemoryLimit:    uint64(sOOMMemoryLimit),
 		// WorkingDirectory: sWorkingPath,
 		// TempDirectory:    sTempPath,
 		// UserID:           sUserID,
@@ -159,6 +163,7 @@ func (s *CommandServer) Close() {
 		s.grpcServer.Stop()
 	}
 	common.Close(s.listener)
+	s.StartedService.Close()
 }
 
 type OverrideOptions struct {
@@ -168,11 +173,16 @@ type OverrideOptions struct {
 }
 
 func (s *CommandServer) StartOrReloadService(configContent string, options *OverrideOptions) error {
-	return s.StartedService.StartOrReloadService(configContent, &daemon.OverrideOptions{
+	saveConfigSnapshot(configContent)
+	err := s.StartedService.StartOrReloadService(configContent, &daemon.OverrideOptions{
 		AutoRedirect:   options.AutoRedirect,
 		IncludePackage: iteratorToArray(options.IncludePackage),
 		ExcludePackage: iteratorToArray(options.ExcludePackage),
 	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *CommandServer) CloseService() error {
@@ -267,6 +277,10 @@ func (h *platformHandler) SystemProxyStatus() (*daemon.SystemProxyStatus, error)
 
 func (h *platformHandler) SetSystemProxyEnabled(enabled bool) error {
 	return (*CommandServer)(h).handler.SetSystemProxyEnabled(enabled)
+}
+
+func (h *platformHandler) TriggerNativeCrash() error {
+	return (*CommandServer)(h).handler.TriggerNativeCrash()
 }
 
 func (h *platformHandler) WriteDebugMessage(message string) {

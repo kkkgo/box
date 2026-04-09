@@ -2,7 +2,6 @@ package route
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"net/netip"
@@ -45,14 +44,50 @@ func (m *ConnectionManager) Start(stage adapter.StartStage) error {
 	return nil
 }
 
-func (m *ConnectionManager) Close() error {
+func (m *ConnectionManager) Count() int {
+	return m.connections.Len()
+}
+
+func (m *ConnectionManager) CloseAll() {
 	m.access.Lock()
-	defer m.access.Unlock()
-	for element := m.connections.Front(); element != nil; element = element.Next() {
-		common.Close(element.Value)
+	var closers []io.Closer
+	for element := m.connections.Front(); element != nil; {
+		nextElement := element.Next()
+		closers = append(closers, element.Value)
+		m.connections.Remove(element)
+		element = nextElement
 	}
-	m.connections.Init()
+	m.access.Unlock()
+	for _, closer := range closers {
+		common.Close(closer)
+	}
+}
+
+func (m *ConnectionManager) Close() error {
+	m.CloseAll()
 	return nil
+}
+
+func (m *ConnectionManager) TrackConn(conn net.Conn) net.Conn {
+	m.access.Lock()
+	element := m.connections.PushBack(conn)
+	m.access.Unlock()
+	return &trackedConn{
+		Conn:    conn,
+		manager: m,
+		element: element,
+	}
+}
+
+func (m *ConnectionManager) TrackPacketConn(conn net.PacketConn) net.PacketConn {
+	m.access.Lock()
+	element := m.connections.PushBack(conn)
+	m.access.Unlock()
+	return &trackedPacketConn{
+		PacketConn: conn,
+		manager:    m,
+		element:    element,
+	}
 }
 
 func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
@@ -93,17 +128,13 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 	if metadata.TLSFragment || metadata.TLSRecordFragment {
 		remoteConn = tf.NewConn(remoteConn, ctx, metadata.TLSFragment, metadata.TLSRecordFragment, metadata.TLSFragmentFallbackDelay)
 	}
-	m.access.Lock()
-	element := m.connections.PushBack(conn)
-	m.access.Unlock()
-	onClose = N.AppendClose(onClose, func(it error) {
-		m.access.Lock()
-		defer m.access.Unlock()
-		m.connections.Remove(element)
-	})
 	var done atomic.Bool
-	m.preConnectionCopy(ctx, conn, remoteConn, false, &done, onClose)
-	m.preConnectionCopy(ctx, remoteConn, conn, true, &done, onClose)
+	if m.kickWriteHandshake(ctx, conn, remoteConn, false, &done, onClose) {
+		return
+	}
+	if m.kickWriteHandshake(ctx, remoteConn, conn, true, &done, onClose) {
+		return
+	}
 	go m.connectionCopy(ctx, conn, remoteConn, false, &done, onClose)
 	go m.connectionCopy(ctx, remoteConn, conn, true, &done, onClose)
 }
@@ -157,6 +188,8 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 	} else {
 		if len(metadata.DestinationAddresses) > 0 {
 			remotePacketConn, destinationAddress, err = dialer.ListenSerialNetworkPacket(ctx, this, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+		} else if packetDialer, withDestination := this.(dialer.PacketDialerWithDestination); withDestination {
+			remotePacketConn, destinationAddress, err = packetDialer.ListenPacketWithDestination(ctx, metadata.Destination)
 		} else {
 			remotePacketConn, err = this.ListenPacket(ctx, metadata.Destination)
 		}
@@ -187,11 +220,16 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 		}
 		if natConn, loaded := common.Cast[bufio.NATPacketConn](conn); loaded {
 			natConn.UpdateDestination(destinationAddress)
-		} else if metadata.Destination != M.SocksaddrFrom(destinationAddress, metadata.Destination.Port) {
-			if metadata.UDPDisableDomainUnmapping {
-				remotePacketConn = bufio.NewUnidirectionalNATPacketConn(bufio.NewPacketConn(remotePacketConn), M.SocksaddrFrom(destinationAddress, metadata.Destination.Port), originDestination)
-			} else {
-				remotePacketConn = bufio.NewNATPacketConn(bufio.NewPacketConn(remotePacketConn), M.SocksaddrFrom(destinationAddress, metadata.Destination.Port), originDestination)
+		} else {
+			destination := M.SocksaddrFrom(destinationAddress, metadata.Destination.Port)
+			if metadata.Destination != destination {
+				if metadata.UDPDisableDomainUnmapping {
+					remotePacketConn = bufio.NewUnidirectionalNATPacketConn(bufio.NewPacketConn(remotePacketConn), destination, originDestination)
+				} else {
+					remotePacketConn = bufio.NewNATPacketConn(bufio.NewPacketConn(remotePacketConn), destination, originDestination)
+				}
+			} else if metadata.RouteOriginalDestination.IsValid() && metadata.RouteOriginalDestination != metadata.Destination {
+				remotePacketConn = bufio.NewDestinationNATPacketConn(bufio.NewPacketConn(remotePacketConn), metadata.Destination, metadata.RouteOriginalDestination)
 			}
 		}
 	} else if metadata.RouteOriginalDestination.IsValid() && metadata.RouteOriginalDestination != metadata.Destination {
@@ -213,88 +251,13 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 		ctx, conn = canceler.NewPacketConn(ctx, conn, udpTimeout)
 	}
 	destination := bufio.NewPacketConn(remotePacketConn)
-	m.access.Lock()
-	element := m.connections.PushBack(conn)
-	m.access.Unlock()
-	onClose = N.AppendClose(onClose, func(it error) {
-		m.access.Lock()
-		defer m.access.Unlock()
-		m.connections.Remove(element)
-	})
 	var done atomic.Bool
 	go m.packetConnectionCopy(ctx, conn, destination, false, &done, onClose)
 	go m.packetConnectionCopy(ctx, destination, conn, true, &done, onClose)
 }
 
-func (m *ConnectionManager) preConnectionCopy(ctx context.Context, source net.Conn, destination net.Conn, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) {
-	readHandshake := N.NeedHandshakeForRead(source)
-	writeHandshake := N.NeedHandshakeForWrite(destination)
-	if readHandshake || writeHandshake {
-		var err error
-		for {
-			err = m.connectionCopyEarlyWrite(source, destination, readHandshake, writeHandshake)
-			if err == nil && N.NeedHandshakeForRead(source) {
-				continue
-			} else if E.IsMulti(err, os.ErrInvalid, context.DeadlineExceeded, io.EOF) {
-				err = nil
-			}
-			break
-		}
-		if err != nil {
-			if done.Swap(true) {
-				onClose(err)
-			}
-			common.Close(source, destination)
-			if !direction {
-				m.logger.ErrorContext(ctx, "connection upload handshake: ", err)
-			} else {
-				m.logger.ErrorContext(ctx, "connection download handshake: ", err)
-			}
-			return
-		}
-	}
-}
-
 func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn, destination net.Conn, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) {
-	var (
-		sourceReader      io.Reader = source
-		destinationWriter io.Writer = destination
-	)
-	var readCounters, writeCounters []N.CountFunc
-	for {
-		sourceReader, readCounters = N.UnwrapCountReader(sourceReader, readCounters)
-		destinationWriter, writeCounters = N.UnwrapCountWriter(destinationWriter, writeCounters)
-		if cachedSrc, isCached := sourceReader.(N.CachedReader); isCached {
-			cachedBuffer := cachedSrc.ReadCached()
-			if cachedBuffer != nil {
-				dataLen := cachedBuffer.Len()
-				_, err := destination.Write(cachedBuffer.Bytes())
-				cachedBuffer.Release()
-				if err != nil {
-					if done.Swap(true) {
-						onClose(err)
-					}
-					common.Close(source, destination)
-					if !direction {
-						m.logger.ErrorContext(ctx, "connection upload payload: ", err)
-					} else {
-						m.logger.ErrorContext(ctx, "connection download payload: ", err)
-					}
-					return
-				}
-				for _, counter := range readCounters {
-					counter(int64(dataLen))
-				}
-				for _, counter := range writeCounters {
-					counter(int64(dataLen))
-				}
-			}
-			continue
-		}
-		break
-	}
-
-	_, err := bufio.CopyWithCounters(destinationWriter, sourceReader, source, readCounters, writeCounters, bufio.DefaultIncreaseBufferAfter, bufio.DefaultBatchSize)
+	_, err := bufio.CopyWithIncreateBuffer(destination, source, bufio.DefaultIncreaseBufferAfter, bufio.DefaultBatchSize)
 	if err != nil {
 		common.Close(source, destination)
 	} else if duplexDst, isDuplex := destination.(N.WriteCloser); isDuplex {
@@ -306,7 +269,9 @@ func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn,
 		destination.Close()
 	}
 	if done.Swap(true) {
-		onClose(err)
+		if onClose != nil {
+			onClose(err)
+		}
 		common.Close(source, destination)
 	}
 	if !direction {
@@ -328,45 +293,56 @@ func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn,
 	}
 }
 
-func (m *ConnectionManager) connectionCopyEarlyWrite(source net.Conn, destination io.Writer, readHandshake bool, writeHandshake bool) error {
-	payload := buf.NewPacket()
-	defer payload.Release()
-	err := source.SetReadDeadline(time.Now().Add(C.ReadPayloadTimeout))
-	if err != nil {
-		if err == os.ErrInvalid {
-			if writeHandshake {
-				return common.Error(destination.Write(nil))
-			}
-		}
-		return err
+func (m *ConnectionManager) kickWriteHandshake(ctx context.Context, source net.Conn, destination net.Conn, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) bool {
+	if !N.NeedHandshakeForWrite(destination) {
+		return false
 	}
 	var (
-		isTimeout bool
-		isEOF     bool
+		cachedBuffer *buf.Buffer
+		wrotePayload bool
 	)
-	_, err = payload.ReadOnceFrom(source)
-	if err != nil {
-		if E.IsTimeout(err) {
-			isTimeout = true
-		} else if errors.Is(err, io.EOF) {
-			isEOF = true
-		} else {
-			return E.Cause(err, "read payload")
+	sourceReader, readCounters := N.UnwrapCountReader(source, nil)
+	destinationWriter, writeCounters := N.UnwrapCountWriter(destination, nil)
+	if cachedReader, ok := sourceReader.(N.CachedReader); ok {
+		cachedBuffer = cachedReader.ReadCached()
+	}
+	var err error
+	if cachedBuffer != nil {
+		wrotePayload = true
+		dataLen := cachedBuffer.Len()
+		_, err = destinationWriter.Write(cachedBuffer.Bytes())
+		cachedBuffer.Release()
+		if err == nil {
+			for _, counter := range readCounters {
+				counter(int64(dataLen))
+			}
+			for _, counter := range writeCounters {
+				counter(int64(dataLen))
+			}
+		}
+	} else {
+		_ = destination.SetWriteDeadline(time.Now().Add(C.ReadPayloadTimeout))
+		_, err = destinationWriter.Write(nil)
+		_ = destination.SetWriteDeadline(time.Time{})
+	}
+	if err == nil {
+		return false
+	}
+	if !wrotePayload && (E.IsMulti(err, os.ErrInvalid, context.DeadlineExceeded, io.EOF) || E.IsTimeout(err)) {
+		return false
+	}
+	if !done.Swap(true) {
+		if onClose != nil {
+			onClose(err)
 		}
 	}
-	_ = source.SetReadDeadline(time.Time{})
-	if !payload.IsEmpty() || writeHandshake {
-		_, err = destination.Write(payload.Bytes())
-		if err != nil {
-			return E.Cause(err, "write payload")
-		}
+	common.Close(source, destination)
+	if !direction {
+		m.logger.ErrorContext(ctx, "connection upload handshake: ", err)
+	} else {
+		m.logger.ErrorContext(ctx, "connection download handshake: ", err)
 	}
-	if isTimeout {
-		return context.DeadlineExceeded
-	} else if isEOF {
-		return io.EOF
-	}
-	return nil
+	return true
 }
 
 func (m *ConnectionManager) packetConnectionCopy(ctx context.Context, source N.PacketReader, destination N.PacketWriter, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) {
@@ -389,7 +365,59 @@ func (m *ConnectionManager) packetConnectionCopy(ctx context.Context, source N.P
 		}
 	}
 	if !done.Swap(true) {
-		onClose(err)
+		if onClose != nil {
+			onClose(err)
+		}
 	}
 	common.Close(source, destination)
+}
+
+type trackedConn struct {
+	net.Conn
+	manager *ConnectionManager
+	element *list.Element[io.Closer]
+}
+
+func (c *trackedConn) Close() error {
+	c.manager.access.Lock()
+	c.manager.connections.Remove(c.element)
+	c.manager.access.Unlock()
+	return c.Conn.Close()
+}
+
+func (c *trackedConn) Upstream() any {
+	return c.Conn
+}
+
+func (c *trackedConn) ReaderReplaceable() bool {
+	return true
+}
+
+func (c *trackedConn) WriterReplaceable() bool {
+	return true
+}
+
+type trackedPacketConn struct {
+	net.PacketConn
+	manager *ConnectionManager
+	element *list.Element[io.Closer]
+}
+
+func (c *trackedPacketConn) Close() error {
+	c.manager.access.Lock()
+	c.manager.connections.Remove(c.element)
+	c.manager.access.Unlock()
+	return c.PacketConn.Close()
+}
+
+func (c *trackedPacketConn) Upstream() any {
+	return bufio.NewPacketConn(c.PacketConn)
+}
+
+func (c *trackedPacketConn) ReaderReplaceable() bool {
+	return true
+}
+
+func (c *trackedPacketConn) WriterReplaceable() bool {
+	return true
 }

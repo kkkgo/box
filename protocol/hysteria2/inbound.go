@@ -125,6 +125,7 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 		UDPTimeout:            udpTimeout,
 		Handler:               inbound,
 		MasqueradeHandler:     masqueradeHandler,
+		BBRProfile:            options.BBRProfile,
 	})
 	if err != nil {
 		return nil, err
@@ -151,7 +152,6 @@ func (h *Inbound) NewConnectionEx(ctx context.Context, conn net.Conn, source M.S
 	//nolint:staticcheck
 	metadata.InboundDetour = h.listener.ListenOptions().Detour
 	//nolint:staticcheck
-	metadata.InboundOptions = h.listener.ListenOptions().InboundOptions
 	metadata.OriginDestination = h.listener.UDPAddr()
 	metadata.Source = source
 	metadata.Destination = destination
@@ -174,7 +174,6 @@ func (h *Inbound) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, 
 	//nolint:staticcheck
 	metadata.InboundDetour = h.listener.ListenOptions().Detour
 	//nolint:staticcheck
-	metadata.InboundOptions = h.listener.ListenOptions().InboundOptions
 	metadata.OriginDestination = h.listener.UDPAddr()
 	metadata.Source = source
 	metadata.Destination = destination

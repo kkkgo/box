@@ -26,6 +26,8 @@ type Router interface {
 	RuleSet(tag string) (RuleSet, bool)
 	Rules() []Rule
 	NeedFindProcess() bool
+	NeedFindNeighbor() bool
+	NeighborResolver() NeighborResolver
 	AppendTracker(tracker ConnectionTracker)
 	ResetNetwork()
 }
@@ -64,10 +66,16 @@ type RuleSet interface {
 
 type RuleSetUpdateCallback func(it RuleSet)
 
+type DNSRuleSetUpdateValidator interface {
+	ValidateRuleSetMetadataUpdate(tag string, metadata RuleSetMetadata) error
+}
+
+// ip_version is not a headless-rule item, so ContainsIPVersionRule is intentionally absent.
 type RuleSetMetadata struct {
-	ContainsProcessRule bool
-	ContainsWIFIRule    bool
-	ContainsIPCIDRRule  bool
+	ContainsProcessRule      bool
+	ContainsWIFIRule         bool
+	ContainsIPCIDRRule       bool
+	ContainsDNSQueryTypeRule bool
 }
 type HTTPStartContext struct {
 	ctx             context.Context

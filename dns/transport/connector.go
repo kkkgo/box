@@ -4,6 +4,9 @@ import (
 	"context"
 	"net"
 	"sync"
+	"time"
+
+	E "github.com/sagernet/sing/common/exceptions"
 )
 
 type ConnectorCallbacks[T any] struct {
@@ -16,10 +19,11 @@ type Connector[T any] struct {
 	dial      func(ctx context.Context) (T, error)
 	callbacks ConnectorCallbacks[T]
 
-	access        sync.Mutex
-	connection    T
-	hasConnection bool
-	connecting    chan struct{}
+	access           sync.Mutex
+	connection       T
+	hasConnection    bool
+	connectionCancel context.CancelFunc
+	connecting       chan struct{}
 
 	closeCtx context.Context
 	closed   bool
@@ -47,6 +51,16 @@ func NewSingleflightConnector(closeCtx context.Context, dial func(context.Contex
 	})
 }
 
+type contextKeyConnecting struct{}
+
+var errRecursiveConnectorDial = E.New("recursive connector dial")
+
+type connectorDialResult[T any] struct {
+	connection T
+	cancel     context.CancelFunc
+	err        error
+}
+
 func (c *Connector[T]) Get(ctx context.Context) (T, error) {
 	var zero T
 	for {
@@ -64,6 +78,14 @@ func (c *Connector[T]) Get(ctx context.Context) (T, error) {
 		}
 
 		c.hasConnection = false
+		if c.connectionCancel != nil {
+			c.connectionCancel()
+			c.connectionCancel = nil
+		}
+		if isRecursiveConnectorDial(ctx, c) {
+			c.access.Unlock()
+			return zero, errRecursiveConnectorDial
+		}
 
 		if c.connecting != nil {
 			connecting := c.connecting
@@ -79,48 +101,134 @@ func (c *Connector[T]) Get(ctx context.Context) (T, error) {
 			}
 		}
 
-		c.connecting = make(chan struct{})
-		c.access.Unlock()
-
-		connection, err := c.dialWithCancellation(ctx)
-
-		c.access.Lock()
-		close(c.connecting)
-		c.connecting = nil
-
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			c.access.Unlock()
 			return zero, err
 		}
 
-		if c.closed {
-			c.callbacks.Close(connection)
-			c.access.Unlock()
-			return zero, ErrTransportClosed
-		}
-
-		c.connection = connection
-		c.hasConnection = true
-		result := c.connection
+		connecting := make(chan struct{})
+		c.connecting = connecting
+		dialContext := context.WithValue(ctx, contextKeyConnecting{}, c)
+		dialResult := make(chan connectorDialResult[T], 1)
 		c.access.Unlock()
 
-		return result, nil
+		go func() {
+			connection, cancel, err := c.dialWithCancellation(dialContext)
+			dialResult <- connectorDialResult[T]{
+				connection: connection,
+				cancel:     cancel,
+				err:        err,
+			}
+		}()
+
+		select {
+		case result := <-dialResult:
+			return c.completeDial(ctx, connecting, result)
+		case <-ctx.Done():
+			go func() {
+				result := <-dialResult
+				_, _ = c.completeDial(ctx, connecting, result)
+			}()
+			return zero, ctx.Err()
+		case <-c.closeCtx.Done():
+			go func() {
+				result := <-dialResult
+				_, _ = c.completeDial(ctx, connecting, result)
+			}()
+			return zero, ErrTransportClosed
+		}
 	}
 }
 
-func (c *Connector[T]) dialWithCancellation(ctx context.Context) (T, error) {
-	dialCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+func isRecursiveConnectorDial[T any](ctx context.Context, connector *Connector[T]) bool {
+	dialConnector, loaded := ctx.Value(contextKeyConnecting{}).(*Connector[T])
+	return loaded && dialConnector == connector
+}
 
-	go func() {
-		select {
-		case <-c.closeCtx.Done():
-			cancel()
-		case <-dialCtx.Done():
+func (c *Connector[T]) completeDial(ctx context.Context, connecting chan struct{}, result connectorDialResult[T]) (T, error) {
+	var zero T
+
+	c.access.Lock()
+	defer c.access.Unlock()
+	defer func() {
+		if c.connecting == connecting {
+			c.connecting = nil
 		}
+		close(connecting)
 	}()
 
-	return c.dial(dialCtx)
+	if result.err != nil {
+		return zero, result.err
+	}
+	if c.closed || c.closeCtx.Err() != nil {
+		result.cancel()
+		c.callbacks.Close(result.connection)
+		return zero, ErrTransportClosed
+	}
+	if err := ctx.Err(); err != nil {
+		result.cancel()
+		c.callbacks.Close(result.connection)
+		return zero, err
+	}
+
+	c.connection = result.connection
+	c.hasConnection = true
+	c.connectionCancel = result.cancel
+	return c.connection, nil
+}
+
+func (c *Connector[T]) dialWithCancellation(ctx context.Context) (T, context.CancelFunc, error) {
+	var zero T
+	if err := ctx.Err(); err != nil {
+		return zero, nil, err
+	}
+	connCtx, cancel := context.WithCancel(c.closeCtx)
+
+	var (
+		stateAccess  sync.Mutex
+		dialComplete bool
+	)
+	stopCancel := context.AfterFunc(ctx, func() {
+		stateAccess.Lock()
+		if !dialComplete {
+			cancel()
+		}
+		stateAccess.Unlock()
+	})
+	select {
+	case <-ctx.Done():
+		stateAccess.Lock()
+		dialComplete = true
+		stateAccess.Unlock()
+		stopCancel()
+		cancel()
+		return zero, nil, ctx.Err()
+	default:
+	}
+
+	connection, err := c.dial(valueContext{connCtx, ctx})
+	stateAccess.Lock()
+	dialComplete = true
+	stateAccess.Unlock()
+	stopCancel()
+	if err != nil {
+		cancel()
+		return zero, nil, err
+	}
+	return connection, cancel, nil
+}
+
+type valueContext struct {
+	context.Context
+	parent context.Context
+}
+
+func (v valueContext) Value(key any) any {
+	return v.parent.Value(key)
+}
+
+func (v valueContext) Deadline() (time.Time, bool) {
+	return v.parent.Deadline()
 }
 
 func (c *Connector[T]) Close() error {
@@ -132,6 +240,10 @@ func (c *Connector[T]) Close() error {
 	}
 	c.closed = true
 
+	if c.connectionCancel != nil {
+		c.connectionCancel()
+		c.connectionCancel = nil
+	}
 	if c.hasConnection {
 		c.callbacks.Close(c.connection)
 		c.hasConnection = false
@@ -144,6 +256,10 @@ func (c *Connector[T]) Reset() {
 	c.access.Lock()
 	defer c.access.Unlock()
 
+	if c.connectionCancel != nil {
+		c.connectionCancel()
+		c.connectionCancel = nil
+	}
 	if c.hasConnection {
 		c.callbacks.Reset(c.connection)
 		c.hasConnection = false

@@ -2,6 +2,188 @@
 icon: material/arrange-bring-forward
 ---
 
+## 1.14.0
+
+### 迁移内联 ACME 到证书提供者
+
+TLS 中的内联 ACME 选项已废弃，且可以被证书提供者替代。
+
+`tls.acme` 的大多数字段都可以原样迁移到 ACME 证书提供者中。
+sing-box 1.14.0 新增字段参阅 [ACME](/zh/configuration/shared/certificate-provider/acme/) 页面。
+
+!!! info "参考"
+
+    [TLS](/zh/configuration/shared/tls/#certificate_provider) /
+    [证书提供者](/zh/configuration/shared/certificate-provider/)
+
+=== ":material-card-remove: 弃用的"
+
+    ```json
+    {
+      "inbounds": [
+        {
+          "type": "trojan",
+          "tls": {
+            "enabled": true,
+            "acme": {
+              "domain": ["example.com"],
+              "email": "admin@example.com"
+            }
+          }
+        }
+      ]
+    }
+    ```
+
+=== ":material-card-multiple: 内联"
+
+    ```json
+    {
+      "inbounds": [
+        {
+          "type": "trojan",
+          "tls": {
+            "enabled": true,
+            "certificate_provider": {
+              "type": "acme",
+              "domain": ["example.com"],
+              "email": "admin@example.com"
+            }
+          }
+        }
+      ]
+    }
+    ```
+
+=== ":material-card-multiple: 共享"
+
+    ```json
+    {
+      "certificate_providers": [
+        {
+          "type": "acme",
+          "tag": "my-cert",
+          "domain": ["example.com"],
+          "email": "admin@example.com"
+        }
+      ],
+      "inbounds": [
+        {
+          "type": "trojan",
+          "tls": {
+            "enabled": true,
+            "certificate_provider": "my-cert"
+          }
+        }
+      ]
+    }
+    ```
+
+### 迁移 DNS 规则动作 strategy 到规则项
+
+旧版 DNS 规则动作 `strategy` 选项已废弃。
+
+在 sing-box 1.14.0 中，内部域名解析（Lookup）现在在规则层拆分 A 和 AAAA 查询，
+每种查询类型独立通过完整的规则链评估。
+请使用 `ip_version` 或 `query_type` 规则项来控制规则匹配的查询类型。
+
+!!! info "参考"
+
+    [DNS 规则](/zh/configuration/dns/rule/) /
+    [DNS 规则动作](/zh/configuration/dns/rule_action/)
+
+=== ":material-card-remove: 弃用的"
+
+    ```json
+    {
+      "dns": {
+        "rules": [
+          {
+            "domain_suffix": ".cn",
+            "action": "route",
+            "server": "local",
+            "strategy": "ipv4_only"
+          }
+        ]
+      }
+    }
+    ```
+
+=== ":material-card-multiple: 新的"
+
+    ```json
+    {
+      "dns": {
+        "rules": [
+          {
+            "domain_suffix": ".cn",
+            "ip_version": 4,
+            "action": "route",
+            "server": "local"
+          }
+        ]
+      }
+    }
+    ```
+
+### 迁移地址筛选字段到响应匹配
+
+旧版地址筛选字段（不使用 `match_response` 的 `ip_cidr`、`ip_is_private`）已废弃，
+旧版 `ip_accept_any` 和旧版 `rule_set_ip_cidr_accept_empty` DNS 规则项也已废弃。
+
+在 sing-box 1.14.0 中，请使用 [`evaluate`](/zh/configuration/dns/rule_action/#evaluate) 动作
+获取 DNS 响应，然后通过 `match_response` 显式匹配。
+
+!!! info "参考"
+
+    [DNS 规则](/zh/configuration/dns/rule/) /
+    [DNS 规则动作](/zh/configuration/dns/rule_action/#evaluate)
+
+=== ":material-card-remove: 弃用的"
+
+    ```json
+    {
+      "dns": {
+        "rules": [
+          {
+            "rule_set": "geoip-cn",
+            "action": "route",
+            "server": "local"
+          },
+          {
+            "action": "route",
+            "server": "remote"
+          }
+        ]
+      }
+    }
+    ```
+
+=== ":material-card-multiple: 新的"
+
+    ```json
+    {
+      "dns": {
+        "rules": [
+          {
+            "action": "evaluate",
+            "server": "remote"
+          },
+          {
+            "match_response": true,
+            "rule_set": "geoip-cn",
+            "action": "route",
+            "server": "local"
+          },
+          {
+            "action": "route",
+            "server": "remote"
+          }
+        ]
+      }
+    }
+    ```
+
 ## 1.12.0
 
 ### 迁移到新的 DNS 服务器格式
@@ -518,9 +700,9 @@ DNS 服务器已经重构。
 
 !!! info "参考"
 
-    [DNS 规则](/configuration/dns/rule/#outbound) /
-    [拨号字段](/configuration/shared/dial/#domain_resolver) /
-    [路由](/configuration/route/#default_domain_resolver)
+    [DNS 规则](/zh/configuration/dns/rule/#outbound) /
+    [拨号字段](/zh/configuration/shared/dial/#domain_resolver) /
+    [路由](/zh/configuration/route/#default_domain_resolver)
 
 === ":material-card-remove: 废弃的"
 
@@ -596,7 +778,7 @@ DNS 服务器已经重构。
 
 !!! info "参考"
 
-    [拨号字段](/configuration/shared/dial/#domain_strategy)
+    [拨号字段](/zh/configuration/shared/dial/#domain_strategy)
 
 === ":material-card-remove: 弃用的"
 

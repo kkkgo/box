@@ -57,114 +57,6 @@ func (n Note) MessageWithLink() string {
 	}
 }
 
-var OptionBadMatchSource = Note{
-	Name:              "bad-match-source",
-	Description:       "legacy match source rule item",
-	DeprecatedVersion: "1.10.0",
-	ScheduledVersion:  "1.11.0",
-	EnvName:           "BAD_MATCH_SOURCE",
-	MigrationLink:     "https://sing-box.sagernet.org/deprecated/#match-source-rule-items-are-renamed",
-}
-
-var OptionGEOIP = Note{
-	Name:              "geoip",
-	Description:       "geoip database",
-	DeprecatedVersion: "1.8.0",
-	ScheduledVersion:  "1.12.0",
-	EnvName:           "GEOIP",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-geoip-to-rule-sets",
-}
-
-var OptionGEOSITE = Note{
-	Name:              "geosite",
-	Description:       "geosite database",
-	DeprecatedVersion: "1.8.0",
-	ScheduledVersion:  "1.12.0",
-	EnvName:           "GEOSITE",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-geosite-to-rule-sets",
-}
-
-var OptionTUNAddressX = Note{
-	Name:              "tun-address-x",
-	Description:       "legacy tun address fields",
-	DeprecatedVersion: "1.10.0",
-	ScheduledVersion:  "1.12.0",
-	EnvName:           "TUN_ADDRESS_X",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#tun-address-fields-are-merged",
-}
-
-var OptionSpecialOutbounds = Note{
-	Name:              "special-outbounds",
-	Description:       "legacy special outbounds",
-	DeprecatedVersion: "1.11.0",
-	ScheduledVersion:  "1.13.0",
-	EnvName:           "SPECIAL_OUTBOUNDS",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-legacy-special-outbounds-to-rule-actions",
-}
-
-var OptionInboundOptions = Note{
-	Name:              "inbound-options",
-	Description:       "legacy inbound fields",
-	DeprecatedVersion: "1.11.0",
-	ScheduledVersion:  "1.13.0",
-	EnvName:           "INBOUND_OPTIONS",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-legacy-special-outbounds-to-rule-actions",
-}
-
-var OptionDestinationOverrideFields = Note{
-	Name:              "destination-override-fields",
-	Description:       "destination override fields in direct outbound",
-	DeprecatedVersion: "1.11.0",
-	ScheduledVersion:  "1.13.0",
-	EnvName:           "DESTINATION_OVERRIDE_FIELDS",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-destination-override-fields-to-route-options",
-}
-
-var OptionWireGuardOutbound = Note{
-	Name:              "wireguard-outbound",
-	Description:       "legacy wireguard outbound",
-	DeprecatedVersion: "1.11.0",
-	ScheduledVersion:  "1.13.0",
-	EnvName:           "WIREGUARD_OUTBOUND",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-wireguard-outbound-to-endpoint",
-}
-
-var OptionWireGuardGSO = Note{
-	Name:              "wireguard-gso",
-	Description:       "GSO option in wireguard outbound",
-	DeprecatedVersion: "1.11.0",
-	ScheduledVersion:  "1.13.0",
-	EnvName:           "WIREGUARD_GSO",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-wireguard-outbound-to-endpoint",
-}
-
-var OptionTUNGSO = Note{
-	Name:              "tun-gso",
-	Description:       "GSO option in tun",
-	DeprecatedVersion: "1.11.0",
-	ScheduledVersion:  "1.12.0",
-	EnvName:           "TUN_GSO",
-	MigrationLink:     "https://sing-box.sagernet.org/deprecated/#gso-option-in-tun",
-}
-
-var OptionLegacyDNSTransport = Note{
-	Name:              "legacy-dns-transport",
-	Description:       "legacy DNS servers",
-	DeprecatedVersion: "1.12.0",
-	ScheduledVersion:  "1.14.0",
-	EnvName:           "LEGACY_DNS_SERVERS",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-to-new-dns-server-formats",
-}
-
-var OptionLegacyDNSFakeIPOptions = Note{
-	Name:              "legacy-dns-fakeip-options",
-	Description:       "legacy DNS fakeip options",
-	DeprecatedVersion: "1.12.0",
-	ScheduledVersion:  "1.14.0",
-	EnvName:           "LEGACY_DNS_FAKEIP_OPTIONS",
-	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-to-new-dns-server-formats",
-}
-
 var OptionOutboundDNSRuleItem = Note{
 	Name:              "outbound-dns-rule-item",
 	Description:       "outbound DNS rule item",
@@ -183,15 +75,6 @@ var OptionMissingDomainResolver = Note{
 	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-outbound-dns-rule-items-to-domain-resolver",
 }
 
-var OptionLegacyECHOptions = Note{
-	Name:              "legacy-ech-options",
-	Description:       "legacy ECH options",
-	DeprecatedVersion: "1.12.0",
-	ScheduledVersion:  "1.13.0",
-	EnvName:           "LEGACY_ECH_OPTIONS",
-	MigrationLink:     "https://sing-box.sagernet.org/deprecated/#legacy-ech-fields",
-}
-
 var OptionLegacyDomainStrategyOptions = Note{
 	Name:              "legacy-domain-strategy-options",
 	Description:       "legacy domain strategy options",
@@ -201,21 +84,58 @@ var OptionLegacyDomainStrategyOptions = Note{
 	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-domain-strategy-options",
 }
 
+var OptionInlineACME = Note{
+	Name:              "inline-acme-options",
+	Description:       "inline ACME options in TLS",
+	DeprecatedVersion: "1.14.0",
+	ScheduledVersion:  "1.16.0",
+	EnvName:           "INLINE_ACME_OPTIONS",
+	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-inline-acme-to-certificate-provider",
+}
+
+var OptionIPAcceptAny = Note{
+	Name:              "dns-rule-ip-accept-any",
+	Description:       "Legacy `ip_accept_any` DNS rule item",
+	DeprecatedVersion: "1.14.0",
+	ScheduledVersion:  "1.16.0",
+	EnvName:           "DNS_RULE_IP_ACCEPT_ANY",
+	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-address-filter-fields-to-response-matching",
+}
+
+var OptionRuleSetIPCIDRAcceptEmpty = Note{
+	Name:              "dns-rule-rule-set-ip-cidr-accept-empty",
+	Description:       "Legacy `rule_set_ip_cidr_accept_empty` DNS rule item",
+	DeprecatedVersion: "1.14.0",
+	ScheduledVersion:  "1.16.0",
+	EnvName:           "DNS_RULE_RULE_SET_IP_CIDR_ACCEPT_EMPTY",
+	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-address-filter-fields-to-response-matching",
+}
+
+var OptionLegacyDNSAddressFilter = Note{
+	Name:              "legacy-dns-address-filter",
+	Description:       "Legacy Address Filter Fields in DNS rules",
+	DeprecatedVersion: "1.14.0",
+	ScheduledVersion:  "1.16.0",
+	EnvName:           "LEGACY_DNS_ADDRESS_FILTER",
+	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-address-filter-fields-to-response-matching",
+}
+
+var OptionLegacyDNSRuleStrategy = Note{
+	Name:              "legacy-dns-rule-strategy",
+	Description:       "Legacy `strategy` DNS rule action option",
+	DeprecatedVersion: "1.14.0",
+	ScheduledVersion:  "1.16.0",
+	EnvName:           "LEGACY_DNS_RULE_STRATEGY",
+	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-dns-rule-action-strategy-to-rule-items",
+}
+
 var Options = []Note{
-	OptionBadMatchSource,
-	OptionGEOIP,
-	OptionGEOSITE,
-	OptionTUNAddressX,
-	OptionSpecialOutbounds,
-	OptionInboundOptions,
-	OptionDestinationOverrideFields,
-	OptionWireGuardOutbound,
-	OptionWireGuardGSO,
-	OptionTUNGSO,
-	OptionLegacyDNSTransport,
-	OptionLegacyDNSFakeIPOptions,
 	OptionOutboundDNSRuleItem,
 	OptionMissingDomainResolver,
-	OptionLegacyECHOptions,
 	OptionLegacyDomainStrategyOptions,
+	OptionInlineACME,
+	OptionIPAcceptAny,
+	OptionRuleSetIPCIDRAcceptEmpty,
+	OptionLegacyDNSAddressFilter,
+	OptionLegacyDNSRuleStrategy,
 }
