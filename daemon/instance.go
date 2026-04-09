@@ -7,12 +7,9 @@ import (
 	"github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
-	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/experimental/deprecated"
 	"github.com/sagernet/sing-box/include"
-	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/json"
 	"github.com/sagernet/sing/service"
@@ -23,7 +20,6 @@ type Instance struct {
 	ctx                   context.Context
 	cancel                context.CancelFunc
 	instance              *box.Box
-	connectionManager     adapter.ConnectionManager
 	clashServer           adapter.ClashServer
 	cacheFile             adapter.CacheFile
 	pauseManager          pause.Manager
@@ -87,20 +83,6 @@ func (s *StartedService) newInstance(profileContent string, overrideOptions *Ove
 			}
 		}
 	}
-	if s.oomKillerEnabled {
-		if !common.Any(options.Services, func(it option.Service) bool {
-			return it.Type == C.TypeOOMKiller
-		}) {
-			oomOptions := &option.OOMKillerServiceOptions{
-				KillerDisabled:      s.oomKillerDisabled,
-				MemoryLimitOverride: s.oomMemoryLimit,
-			}
-			options.Services = append(options.Services, option.Service{
-				Type:    C.TypeOOMKiller,
-				Options: oomOptions,
-			})
-		}
-	}
 	urlTestHistoryStorage := urltest.NewHistoryStorage()
 	ctx = service.ContextWithPtr(ctx, urlTestHistoryStorage)
 	i := &Instance{
@@ -118,11 +100,9 @@ func (s *StartedService) newInstance(profileContent string, overrideOptions *Ove
 		return nil, err
 	}
 	i.instance = boxInstance
-	i.connectionManager = service.FromContext[adapter.ConnectionManager](ctx)
 	i.clashServer = service.FromContext[adapter.ClashServer](ctx)
 	i.pauseManager = service.FromContext[pause.Manager](ctx)
 	i.cacheFile = service.FromContext[adapter.CacheFile](ctx)
-	log.SetStdLogger(boxInstance.LogFactory().Logger())
 	return i, nil
 }
 

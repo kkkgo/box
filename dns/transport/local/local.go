@@ -81,7 +81,10 @@ func (t *Transport) Reset() {
 
 func (t *Transport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
 	if t.resolved != nil {
-		return t.resolved.Exchange(ctx, message)
+		resolverObject := t.resolved.Object()
+		if resolverObject != nil {
+			return t.resolved.Exchange(resolverObject, ctx, message)
+		}
 	}
 	question := message.Question[0]
 	if question.Qtype == mDNS.TypeA || question.Qtype == mDNS.TypeAAAA {

@@ -235,7 +235,7 @@ func (h *Outbound) DialContext(ctx context.Context, network string, destination 
 	switch N.NetworkName(network) {
 	case N.NetworkTCP:
 		h.logger.InfoContext(ctx, "outbound connection to ", destination)
-		return h.client.DialEarly(ctx, destination)
+		return h.client.DialEarly(destination)
 	case N.NetworkUDP:
 		if h.uotClient == nil {
 			return nil, E.New("UDP is not supported unless UDP over TCP is enabled")
@@ -254,10 +254,6 @@ func (h *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
 	return h.uotClient.ListenPacket(ctx, destination)
 }
 
-func (h *Outbound) InterfaceUpdated() {
-	h.client.Engine().CloseAllConnections()
-}
-
 func (h *Outbound) Close() error {
 	return h.client.Close()
 }
@@ -271,5 +267,5 @@ type naiveDialer struct {
 }
 
 func (d *naiveDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
-	return d.NaiveClient.DialEarly(ctx, destination)
+	return d.NaiveClient.DialEarly(destination)
 }

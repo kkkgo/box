@@ -55,4 +55,4 @@ SSM API 服务是一个用于管理 Shadowsocks 服务器的 RESTful API 服务�
 
 #### tls
 
-TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/#入站)。
+TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/#inbound)。

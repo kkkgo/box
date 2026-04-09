@@ -29,7 +29,7 @@ DNS 服务器的类型。
 
 | 类型              | 格式                        |
 |-----------------|---------------------------|
-| empty (default) | :material-note-remove: [Legacy](./legacy/) |
+| empty (default) | [Legacy](./legacy/)       |
 | `local`         | [Local](./local/)         |
 | `hosts`         | [Hosts](./hosts/)         |
 | `tcp`           | [TCP](./tcp/)             |

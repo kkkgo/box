@@ -32,7 +32,9 @@ func TestChainedInbound(t *testing.T) {
 					ListenOptions: option.ListenOptions{
 						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
 						ListenPort: serverPort,
-						Detour:     "detour",
+						InboundOptions: option.InboundOptions{
+							Detour: "detour",
+						},
 					},
 					Method:   method,
 					Password: password,

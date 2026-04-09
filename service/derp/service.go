@@ -1,5 +1,3 @@
-//go:build with_gvisor
-
 package derp
 
 import (

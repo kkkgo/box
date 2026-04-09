@@ -2,7 +2,6 @@ package clashapi
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -18,15 +17,15 @@ import (
 	"github.com/gofrs/uuid/v5"
 )
 
-func connectionRouter(ctx context.Context, router adapter.Router, trafficManager *trafficontrol.Manager) http.Handler {
+func connectionRouter(router adapter.Router, trafficManager *trafficontrol.Manager) http.Handler {
 	r := chi.NewRouter()
-	r.Get("/", getConnections(ctx, trafficManager))
+	r.Get("/", getConnections(trafficManager))
 	r.Delete("/", closeAllConnections(router, trafficManager))
 	r.Delete("/{id}", closeConnection(trafficManager))
 	return r
 }
 
-func getConnections(ctx context.Context, trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r *http.Request) {
+func getConnections(trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") != "websocket" {
 			snapshot := trafficManager.Snapshot()
@@ -38,7 +37,6 @@ func getConnections(ctx context.Context, trafficManager *trafficontrol.Manager) 
 		if err != nil {
 			return
 		}
-		defer conn.Close()
 
 		intervalStr := r.URL.Query().Get("interval")
 		interval := 1000
@@ -69,12 +67,7 @@ func getConnections(ctx context.Context, trafficManager *trafficontrol.Manager) 
 
 		tick := time.NewTicker(time.Millisecond * time.Duration(interval))
 		defer tick.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tick.C:
-			}
+		for range tick.C {
 			if err = sendSnapshot(); err != nil {
 				break
 			}

@@ -10,7 +10,6 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -77,35 +76,6 @@ func isHopByHopHeader(header string) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-const (
-	weeklyWindowSeconds = 604800
-	weeklyWindowMinutes = weeklyWindowSeconds / 60
-)
-
-func parseInt64Header(headers http.Header, headerName string) (int64, bool) {
-	headerValue := strings.TrimSpace(headers.Get(headerName))
-	if headerValue == "" {
-		return 0, false
-	}
-	parsedValue, parseError := strconv.ParseInt(headerValue, 10, 64)
-	if parseError != nil {
-		return 0, false
-	}
-	return parsedValue, true
-}
-
-func extractWeeklyCycleHint(headers http.Header) *WeeklyCycleHint {
-	resetAtUnix, hasResetAt := parseInt64Header(headers, "anthropic-ratelimit-unified-7d-reset")
-	if !hasResetAt || resetAtUnix <= 0 {
-		return nil
-	}
-
-	return &WeeklyCycleHint{
-		WindowMinutes: weeklyWindowMinutes,
-		ResetAt:       time.Unix(resetAtUnix, 0).UTC(),
 	}
 }
 
@@ -281,11 +251,11 @@ func (s *Service) getAccessToken() (string, error) {
 	return newCredentials.AccessToken, nil
 }
 
-func detectContextWindow(betaHeader string, totalInputTokens int64) int {
-	if totalInputTokens > premiumContextThreshold {
+func detectContextWindow(betaHeader string, inputTokens int64) int {
+	if inputTokens > premiumContextThreshold {
 		features := strings.Split(betaHeader, ",")
 		for _, feature := range features {
-			if strings.HasPrefix(strings.TrimSpace(feature), "context-1m") {
+			if strings.TrimSpace(feature) == "context-1m" {
 				return contextWindowPremium
 			}
 		}
@@ -362,13 +332,6 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	serviceOverridesAcceptEncoding := len(s.httpHeaders.Values("Accept-Encoding")) > 0
-	if s.usageTracker != nil && !serviceOverridesAcceptEncoding {
-		// Strip Accept-Encoding so Go Transport adds it automatically
-		// and transparently decompresses the response for correct usage counting.
-		proxyRequest.Header.Del("Accept-Encoding")
-	}
-
 	anthropicBetaHeader := proxyRequest.Header.Get("anthropic-beta")
 	if anthropicBetaHeader != "" {
 		proxyRequest.Header.Set("anthropic-beta", anthropicBetaOAuthValue+","+anthropicBetaHeader)
@@ -429,7 +392,6 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleResponseWithTracking(writer http.ResponseWriter, response *http.Response, requestModel string, anthropicBetaHeader string, messagesCount int, username string) {
-	weeklyCycleHint := extractWeeklyCycleHint(response.Header)
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	isStreaming := err == nil && mediaType == "text/event-stream"
 
@@ -454,9 +416,8 @@ func (s *Service) handleResponseWithTracking(writer http.ResponseWriter, respons
 
 		if usage.InputTokens > 0 || usage.OutputTokens > 0 {
 			if responseModel != "" {
-				totalInputTokens := usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens
-				contextWindow := detectContextWindow(anthropicBetaHeader, totalInputTokens)
-				s.usageTracker.AddUsageWithCycleHint(
+				contextWindow := detectContextWindow(anthropicBetaHeader, usage.InputTokens)
+				s.usageTracker.AddUsage(
 					responseModel,
 					contextWindow,
 					messagesCount,
@@ -464,11 +425,7 @@ func (s *Service) handleResponseWithTracking(writer http.ResponseWriter, respons
 					usage.OutputTokens,
 					usage.CacheReadInputTokens,
 					usage.CacheCreationInputTokens,
-					usage.CacheCreation.Ephemeral5mInputTokens,
-					usage.CacheCreation.Ephemeral1hInputTokens,
 					username,
-					time.Now(),
-					weeklyCycleHint,
 				)
 			}
 		}
@@ -528,8 +485,6 @@ func (s *Service) handleResponseWithTracking(writer http.ResponseWriter, respons
 							accumulatedUsage.InputTokens = messageStart.Message.Usage.InputTokens
 							accumulatedUsage.CacheReadInputTokens = messageStart.Message.Usage.CacheReadInputTokens
 							accumulatedUsage.CacheCreationInputTokens = messageStart.Message.Usage.CacheCreationInputTokens
-							accumulatedUsage.CacheCreation.Ephemeral5mInputTokens = messageStart.Message.Usage.CacheCreation.Ephemeral5mInputTokens
-							accumulatedUsage.CacheCreation.Ephemeral1hInputTokens = messageStart.Message.Usage.CacheCreation.Ephemeral1hInputTokens
 						}
 					case "message_delta":
 						messageDelta := event.AsMessageDelta()
@@ -555,9 +510,8 @@ func (s *Service) handleResponseWithTracking(writer http.ResponseWriter, respons
 
 			if accumulatedUsage.InputTokens > 0 || accumulatedUsage.OutputTokens > 0 {
 				if responseModel != "" {
-					totalInputTokens := accumulatedUsage.InputTokens + accumulatedUsage.CacheCreationInputTokens + accumulatedUsage.CacheReadInputTokens
-					contextWindow := detectContextWindow(anthropicBetaHeader, totalInputTokens)
-					s.usageTracker.AddUsageWithCycleHint(
+					contextWindow := detectContextWindow(anthropicBetaHeader, accumulatedUsage.InputTokens)
+					s.usageTracker.AddUsage(
 						responseModel,
 						contextWindow,
 						messagesCount,
@@ -565,11 +519,7 @@ func (s *Service) handleResponseWithTracking(writer http.ResponseWriter, respons
 						accumulatedUsage.OutputTokens,
 						accumulatedUsage.CacheReadInputTokens,
 						accumulatedUsage.CacheCreationInputTokens,
-						accumulatedUsage.CacheCreation.Ephemeral5mInputTokens,
-						accumulatedUsage.CacheCreation.Ephemeral1hInputTokens,
 						username,
-						time.Now(),
-						weeklyCycleHint,
 					)
 				}
 			}

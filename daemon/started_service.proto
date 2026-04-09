@@ -26,18 +26,12 @@ service StartedService {
 
   rpc GetSystemProxyStatus(google.protobuf.Empty) returns(SystemProxyStatus) {}
   rpc SetSystemProxyEnabled(SetSystemProxyEnabledRequest) returns(google.protobuf.Empty) {}
-  rpc TriggerDebugCrash(DebugCrashRequest) returns(google.protobuf.Empty) {}
-  rpc TriggerOOMReport(google.protobuf.Empty) returns(google.protobuf.Empty) {}
 
   rpc SubscribeConnections(SubscribeConnectionsRequest) returns(stream ConnectionEvents) {}
   rpc CloseConnection(CloseConnectionRequest) returns(google.protobuf.Empty) {}
   rpc CloseAllConnections(google.protobuf.Empty) returns(google.protobuf.Empty) {}
   rpc GetDeprecatedWarnings(google.protobuf.Empty) returns(DeprecatedWarnings) {}
   rpc GetStartedAt(google.protobuf.Empty) returns(StartedAt) {}
-
-  rpc ListOutbounds(google.protobuf.Empty) returns (OutboundList) {}
-  rpc SubscribeOutbounds(google.protobuf.Empty) returns (stream OutboundList) {}
-  rpc StartNetworkQualityTest(NetworkQualityTestRequest) returns (stream NetworkQualityTestProgress) {}
 }
 
 message ServiceStatus {
@@ -147,15 +141,6 @@ message SetSystemProxyEnabledRequest {
   bool enabled = 1;
 }
 
-message DebugCrashRequest {
-  enum Type {
-    GO = 0;
-    NATIVE = 1;
-  }
-
-  Type type = 1;
-}
-
 message SubscribeConnectionsRequest {
   int64 interval = 1;
 }
@@ -210,7 +195,7 @@ message ProcessInfo {
   int32 userId = 2;
   string userName = 3;
   string processPath = 4;
-  repeated string packageNames = 5;
+  string packageName = 5;
 }
 
 message CloseConnectionRequest {
@@ -225,38 +210,8 @@ message DeprecatedWarning {
   string message = 1;
   bool impending = 2;
   string migrationLink = 3;
-  string description = 4;
-  string deprecatedVersion = 5;
-  string scheduledVersion = 6;
 }
 
 message StartedAt {
   int64 startedAt = 1;
-}
-
-message OutboundList {
-  repeated GroupItem outbounds = 1;
-}
-
-message NetworkQualityTestRequest {
-  string configURL = 1;
-  string outboundTag = 2;
-  bool serial = 3;
-  int32 maxRuntimeSeconds = 4;
-}
-
-message NetworkQualityTestProgress {
-  int32 phase = 1;
-  int64 downloadCapacity = 2;
-  int64 uploadCapacity = 3;
-  int32 downloadRPM = 4;
-  int32 uploadRPM = 5;
-  int32 idleLatencyMs = 6;
-  int64 elapsedMs = 7;
-  bool isFinal = 8;
-  string error = 9;
-  int32 downloadCapacityAccuracy = 10;
-  int32 uploadCapacityAccuracy = 11;
-  int32 downloadRPMAccuracy = 12;
-  int32 uploadRPMAccuracy = 13;
 }

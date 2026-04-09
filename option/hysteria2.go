@@ -19,7 +19,6 @@ type Hysteria2InboundOptions struct {
 	IgnoreClientBandwidth bool            `json:"ignore_client_bandwidth,omitempty"`
 	InboundTLSOptionsContainer
 	Masquerade  *Hysteria2Masquerade `json:"masquerade,omitempty"`
-	BBRProfile  string               `json:"bbr_profile,omitempty"`
 	BrutalDebug bool                 `json:"brutal_debug,omitempty"`
 }
 
@@ -113,15 +112,13 @@ type Hysteria2MasqueradeString struct {
 type Hysteria2OutboundOptions struct {
 	DialerOptions
 	ServerOptions
-	ServerPorts    badoption.Listable[string] `json:"server_ports,omitempty"`
-	HopInterval    badoption.Duration         `json:"hop_interval,omitempty"`
-	HopIntervalMax badoption.Duration         `json:"hop_interval_max,omitempty"`
-	UpMbps         int                        `json:"up_mbps,omitempty"`
-	DownMbps       int                        `json:"down_mbps,omitempty"`
-	Obfs           *Hysteria2Obfs             `json:"obfs,omitempty"`
-	Password       string                     `json:"password,omitempty"`
-	Network        NetworkList                `json:"network,omitempty"`
+	ServerPorts badoption.Listable[string] `json:"server_ports,omitempty"`
+	HopInterval badoption.Duration         `json:"hop_interval,omitempty"`
+	UpMbps      int                        `json:"up_mbps,omitempty"`
+	DownMbps    int                        `json:"down_mbps,omitempty"`
+	Obfs        *Hysteria2Obfs             `json:"obfs,omitempty"`
+	Password    string                     `json:"password,omitempty"`
+	Network     NetworkList                `json:"network,omitempty"`
 	OutboundTLSOptionsContainer
-	BBRProfile  string `json:"bbr_profile,omitempty"`
-	BrutalDebug bool   `json:"brutal_debug,omitempty"`
+	BrutalDebug bool `json:"brutal_debug,omitempty"`
 }

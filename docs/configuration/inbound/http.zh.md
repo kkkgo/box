@@ -26,7 +26,7 @@
 
 #### tls
 
-TLS 配置, 参阅 [TLS](/zh/configuration/shared/tls/#入站)。
+TLS 配置, 参阅 [TLS](/zh/configuration/shared/tls/#inbound)。
 
 #### users
 

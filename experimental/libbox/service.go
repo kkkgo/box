@@ -78,7 +78,6 @@ func (w *platformInterfaceWrapper) OpenInterface(options *tun.Options, platformO
 	}
 	options.FileDescriptor = dupFd
 	w.myTunName = options.Name
-	w.iif.RegisterMyInterface(options.Name)
 	return tun.New(*options)
 }
 
@@ -202,10 +201,10 @@ func (w *platformInterfaceWrapper) FindConnectionOwner(request *adapter.FindConn
 		return nil, err
 	}
 	return &adapter.ConnectionOwner{
-		UserId:              result.UserId,
-		UserName:            result.UserName,
-		ProcessPath:         result.ProcessPath,
-		AndroidPackageNames: result.androidPackageNames,
+		UserId:             result.UserId,
+		UserName:           result.UserName,
+		ProcessPath:        result.ProcessPath,
+		AndroidPackageName: result.AndroidPackageName,
 	}, nil
 }
 
@@ -219,46 +218,6 @@ func (w *platformInterfaceWrapper) UsePlatformNotification() bool {
 
 func (w *platformInterfaceWrapper) SendNotification(notification *adapter.Notification) error {
 	return w.iif.SendNotification((*Notification)(notification))
-}
-
-func (w *platformInterfaceWrapper) UsePlatformNeighborResolver() bool {
-	return true
-}
-
-func (w *platformInterfaceWrapper) StartNeighborMonitor(listener adapter.NeighborUpdateListener) error {
-	return w.iif.StartNeighborMonitor(&neighborUpdateListenerWrapper{listener: listener})
-}
-
-func (w *platformInterfaceWrapper) CloseNeighborMonitor(listener adapter.NeighborUpdateListener) error {
-	return w.iif.CloseNeighborMonitor(nil)
-}
-
-type neighborUpdateListenerWrapper struct {
-	listener adapter.NeighborUpdateListener
-}
-
-func (w *neighborUpdateListenerWrapper) UpdateNeighborTable(entries NeighborEntryIterator) {
-	var result []adapter.NeighborEntry
-	for entries.HasNext() {
-		entry := entries.Next()
-		if entry == nil {
-			continue
-		}
-		address, err := netip.ParseAddr(entry.Address)
-		if err != nil {
-			continue
-		}
-		macAddress, err := net.ParseMAC(entry.MacAddress)
-		if err != nil {
-			continue
-		}
-		result = append(result, adapter.NeighborEntry{
-			Address:    address,
-			MACAddress: macAddress,
-			Hostname:   entry.Hostname,
-		})
-	}
-	w.listener.UpdateNeighborTable(result)
 }
 
 func AvailablePort(startPort int32) (int32, error) {

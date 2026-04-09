@@ -2,7 +2,6 @@ package clashapi
 
 import (
 	"bytes"
-	"context"
 	"net"
 	"net/http"
 	"runtime/debug"
@@ -28,7 +27,7 @@ func (s *Server) setupMetaAPI(r chi.Router) {
 		})
 		r.Mount("/", middleware.Profiler())
 	}
-	r.Get("/memory", memory(s.ctx, s.trafficManager))
+	r.Get("/memory", memory(s.trafficManager))
 	r.Mount("/group", groupRouter(s))
 	r.Mount("/upgrade", upgradeRouter(s))
 }
@@ -38,7 +37,7 @@ type Memory struct {
 	OSLimit uint64 `json:"oslimit"` // maybe we need it in the future
 }
 
-func memory(ctx context.Context, trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r *http.Request) {
+func memory(trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var conn net.Conn
 		if r.Header.Get("Upgrade") == "websocket" {
@@ -47,7 +46,6 @@ func memory(ctx context.Context, trafficManager *trafficontrol.Manager) func(w h
 			if err != nil {
 				return
 			}
-			defer conn.Close()
 		}
 
 		if conn == nil {
@@ -60,12 +58,7 @@ func memory(ctx context.Context, trafficManager *trafficontrol.Manager) func(w h
 		buf := &bytes.Buffer{}
 		var err error
 		first := true
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tick.C:
-			}
+		for range tick.C {
 			buf.Reset()
 
 			inuse := trafficManager.Snapshot().Memory

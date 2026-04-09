@@ -51,7 +51,7 @@ DNS 服务器的端口。
 
 #### tls
 
-TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/#出站)。
+TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/#outbound)。
 
 ### 拨号字段
 

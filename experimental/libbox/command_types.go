@@ -32,11 +32,11 @@ type OutboundGroup struct {
 	Selectable bool
 	Selected   string
 	IsExpand   bool
-	itemList   []*OutboundGroupItem
+	ItemList   []*OutboundGroupItem
 }
 
 func (g *OutboundGroup) GetItems() OutboundGroupItemIterator {
-	return newIterator(g.itemList)
+	return newIterator(g.ItemList)
 }
 
 type OutboundGroupIterator interface {
@@ -239,15 +239,11 @@ func (c *Connections) Iterator() ConnectionIterator {
 }
 
 type ProcessInfo struct {
-	ProcessID    int64
-	UserID       int32
-	UserName     string
-	ProcessPath  string
-	packageNames []string
-}
-
-func (p *ProcessInfo) PackageNames() StringIterator {
-	return newIterator(p.packageNames)
+	ProcessID   int64
+	UserID      int32
+	UserName    string
+	ProcessPath string
+	PackageName string
 }
 
 type Connection struct {
@@ -271,12 +267,12 @@ type Connection struct {
 	Rule          string
 	Outbound      string
 	OutboundType  string
-	chainList     []string
+	ChainList     []string
 	ProcessInfo   *ProcessInfo
 }
 
 func (c *Connection) Chain() StringIterator {
-	return newIterator(c.chainList)
+	return newIterator(c.ChainList)
 }
 
 func (c *Connection) DisplayDestination() string {
@@ -296,7 +292,7 @@ type ConnectionIterator interface {
 	HasNext() bool
 }
 
-func statusMessageFromGRPC(status *daemon.Status) *StatusMessage {
+func StatusMessageFromGRPC(status *daemon.Status) *StatusMessage {
 	if status == nil {
 		return nil
 	}
@@ -313,7 +309,7 @@ func statusMessageFromGRPC(status *daemon.Status) *StatusMessage {
 	}
 }
 
-func outboundGroupIteratorFromGRPC(groups *daemon.Groups) OutboundGroupIterator {
+func OutboundGroupIteratorFromGRPC(groups *daemon.Groups) OutboundGroupIterator {
 	if groups == nil || len(groups.Group) == 0 {
 		return newIterator([]*OutboundGroup{})
 	}
@@ -327,7 +323,7 @@ func outboundGroupIteratorFromGRPC(groups *daemon.Groups) OutboundGroupIterator 
 			IsExpand:   g.IsExpand,
 		}
 		for _, item := range g.Items {
-			libboxGroup.itemList = append(libboxGroup.itemList, &OutboundGroupItem{
+			libboxGroup.ItemList = append(libboxGroup.ItemList, &OutboundGroupItem{
 				Tag:          item.Tag,
 				Type:         item.Type,
 				URLTestTime:  item.UrlTestTime,
@@ -339,15 +335,15 @@ func outboundGroupIteratorFromGRPC(groups *daemon.Groups) OutboundGroupIterator 
 	return newIterator(libboxGroups)
 }
 
-func connectionFromGRPC(conn *daemon.Connection) Connection {
+func ConnectionFromGRPC(conn *daemon.Connection) Connection {
 	var processInfo *ProcessInfo
 	if conn.ProcessInfo != nil {
 		processInfo = &ProcessInfo{
-			ProcessID:    int64(conn.ProcessInfo.ProcessId),
-			UserID:       conn.ProcessInfo.UserId,
-			UserName:     conn.ProcessInfo.UserName,
-			ProcessPath:  conn.ProcessInfo.ProcessPath,
-			packageNames: conn.ProcessInfo.PackageNames,
+			ProcessID:   int64(conn.ProcessInfo.ProcessId),
+			UserID:      conn.ProcessInfo.UserId,
+			UserName:    conn.ProcessInfo.UserName,
+			ProcessPath: conn.ProcessInfo.ProcessPath,
+			PackageName: conn.ProcessInfo.PackageName,
 		}
 	}
 	return Connection{
@@ -371,12 +367,12 @@ func connectionFromGRPC(conn *daemon.Connection) Connection {
 		Rule:          conn.Rule,
 		Outbound:      conn.Outbound,
 		OutboundType:  conn.OutboundType,
-		chainList:     conn.ChainList,
+		ChainList:     conn.ChainList,
 		ProcessInfo:   processInfo,
 	}
 }
 
-func connectionEventFromGRPC(event *daemon.ConnectionEvent) *ConnectionEvent {
+func ConnectionEventFromGRPC(event *daemon.ConnectionEvent) *ConnectionEvent {
 	if event == nil {
 		return nil
 	}
@@ -388,13 +384,13 @@ func connectionEventFromGRPC(event *daemon.ConnectionEvent) *ConnectionEvent {
 		ClosedAt:      event.ClosedAt,
 	}
 	if event.Connection != nil {
-		conn := connectionFromGRPC(event.Connection)
+		conn := ConnectionFromGRPC(event.Connection)
 		libboxEvent.Connection = &conn
 	}
 	return libboxEvent
 }
 
-func connectionEventsFromGRPC(events *daemon.ConnectionEvents) *ConnectionEvents {
+func ConnectionEventsFromGRPC(events *daemon.ConnectionEvents) *ConnectionEvents {
 	if events == nil {
 		return nil
 	}
@@ -402,14 +398,14 @@ func connectionEventsFromGRPC(events *daemon.ConnectionEvents) *ConnectionEvents
 		Reset: events.Reset_,
 	}
 	for _, event := range events.Events {
-		if libboxEvent := connectionEventFromGRPC(event); libboxEvent != nil {
+		if libboxEvent := ConnectionEventFromGRPC(event); libboxEvent != nil {
 			libboxEvents.events = append(libboxEvents.events, libboxEvent)
 		}
 	}
 	return libboxEvents
 }
 
-func systemProxyStatusFromGRPC(status *daemon.SystemProxyStatus) *SystemProxyStatus {
+func SystemProxyStatusFromGRPC(status *daemon.SystemProxyStatus) *SystemProxyStatus {
 	if status == nil {
 		return nil
 	}
@@ -419,7 +415,7 @@ func systemProxyStatusFromGRPC(status *daemon.SystemProxyStatus) *SystemProxySta
 	}
 }
 
-func systemProxyStatusToGRPC(status *SystemProxyStatus) *daemon.SystemProxyStatus {
+func SystemProxyStatusToGRPC(status *SystemProxyStatus) *daemon.SystemProxyStatus {
 	if status == nil {
 		return nil
 	}

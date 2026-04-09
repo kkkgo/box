@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -13,6 +14,7 @@ import (
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
+	M "github.com/sagernet/sing/common/metadata"
 	"github.com/sagernet/sing/common/task"
 	"github.com/sagernet/sing/contrab/freelru"
 	"github.com/sagernet/sing/contrab/maphash"
@@ -107,7 +109,7 @@ func extractNegativeTTL(response *dns.Msg) (uint32, bool) {
 	return 0, false
 }
 
-func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, message *dns.Msg, options adapter.DNSQueryOptions, responseChecker func(response *dns.Msg) bool) (*dns.Msg, error) {
+func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, message *dns.Msg, options adapter.DNSQueryOptions, responseChecker func(responseAddrs []netip.Addr) bool) (*dns.Msg, error) {
 	if len(message.Question) == 0 {
 		if c.logger != nil {
 			c.logger.WarnContext(ctx, "bad question size: ", len(message.Question))
@@ -142,11 +144,7 @@ func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, m
 		if c.cache != nil {
 			cond, loaded := c.cacheLock.LoadOrStore(question, make(chan struct{}))
 			if loaded {
-				select {
-				case <-cond:
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				}
+				<-cond
 			} else {
 				defer func() {
 					c.cacheLock.Delete(question)
@@ -156,11 +154,7 @@ func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, m
 		} else if c.transportCache != nil {
 			cond, loaded := c.transportCacheLock.LoadOrStore(question, make(chan struct{}))
 			if loaded {
-				select {
-				case <-cond:
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				}
+				<-cond
 			} else {
 				defer func() {
 					c.transportCacheLock.Delete(question)
@@ -237,10 +231,11 @@ func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, m
 	disableCache = disableCache || (response.Rcode != dns.RcodeSuccess && response.Rcode != dns.RcodeNameError)
 	if responseChecker != nil {
 		var rejected bool
-		if response.Rcode != dns.RcodeSuccess && response.Rcode != dns.RcodeNameError {
+		// TODO: add accept_any rule and support to check response instead of addresses
+		if response.Rcode != dns.RcodeSuccess || len(response.Answer) == 0 {
 			rejected = true
 		} else {
-			rejected = !responseChecker(response)
+			rejected = !responseChecker(MessageToAddresses(response))
 		}
 		if rejected {
 			if !disableCache && c.rdrc != nil {
@@ -310,7 +305,7 @@ func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, m
 	return response, nil
 }
 
-func (c *Client) Lookup(ctx context.Context, transport adapter.DNSTransport, domain string, options adapter.DNSQueryOptions, responseChecker func(response *dns.Msg) bool) ([]netip.Addr, error) {
+func (c *Client) Lookup(ctx context.Context, transport adapter.DNSTransport, domain string, options adapter.DNSQueryOptions, responseChecker func(responseAddrs []netip.Addr) bool) ([]netip.Addr, error) {
 	domain = FqdnToDomain(domain)
 	dnsName := dns.Fqdn(domain)
 	var strategy C.DomainStrategy
@@ -319,20 +314,16 @@ func (c *Client) Lookup(ctx context.Context, transport adapter.DNSTransport, dom
 	} else {
 		strategy = options.Strategy
 	}
-	lookupOptions := options
-	if options.LookupStrategy != C.DomainStrategyAsIS {
-		lookupOptions.Strategy = strategy
-	}
 	if strategy == C.DomainStrategyIPv4Only {
-		return c.lookupToExchange(ctx, transport, dnsName, dns.TypeA, lookupOptions, responseChecker)
+		return c.lookupToExchange(ctx, transport, dnsName, dns.TypeA, options, responseChecker)
 	} else if strategy == C.DomainStrategyIPv6Only {
-		return c.lookupToExchange(ctx, transport, dnsName, dns.TypeAAAA, lookupOptions, responseChecker)
+		return c.lookupToExchange(ctx, transport, dnsName, dns.TypeAAAA, options, responseChecker)
 	}
 	var response4 []netip.Addr
 	var response6 []netip.Addr
 	var group task.Group
 	group.Append("exchange4", func(ctx context.Context) error {
-		response, err := c.lookupToExchange(ctx, transport, dnsName, dns.TypeA, lookupOptions, responseChecker)
+		response, err := c.lookupToExchange(ctx, transport, dnsName, dns.TypeA, options, responseChecker)
 		if err != nil {
 			return err
 		}
@@ -340,7 +331,7 @@ func (c *Client) Lookup(ctx context.Context, transport adapter.DNSTransport, dom
 		return nil
 	})
 	group.Append("exchange6", func(ctx context.Context) error {
-		response, err := c.lookupToExchange(ctx, transport, dnsName, dns.TypeAAAA, lookupOptions, responseChecker)
+		response, err := c.lookupToExchange(ctx, transport, dnsName, dns.TypeAAAA, options, responseChecker)
 		if err != nil {
 			return err
 		}
@@ -395,7 +386,7 @@ func (c *Client) storeCache(transport adapter.DNSTransport, question dns.Questio
 	}
 }
 
-func (c *Client) lookupToExchange(ctx context.Context, transport adapter.DNSTransport, name string, qType uint16, options adapter.DNSQueryOptions, responseChecker func(response *dns.Msg) bool) ([]netip.Addr, error) {
+func (c *Client) lookupToExchange(ctx context.Context, transport adapter.DNSTransport, name string, qType uint16, options adapter.DNSQueryOptions, responseChecker func(responseAddrs []netip.Addr) bool) ([]netip.Addr, error) {
 	question := dns.Question{
 		Name:   name,
 		Qtype:  qType,
@@ -510,7 +501,25 @@ func (c *Client) loadResponse(question dns.Question, transport adapter.DNSTransp
 }
 
 func MessageToAddresses(response *dns.Msg) []netip.Addr {
-	return adapter.DNSResponseAddresses(response)
+	if response == nil || response.Rcode != dns.RcodeSuccess {
+		return nil
+	}
+	addresses := make([]netip.Addr, 0, len(response.Answer))
+	for _, rawAnswer := range response.Answer {
+		switch answer := rawAnswer.(type) {
+		case *dns.A:
+			addresses = append(addresses, M.AddrFromIP(answer.A))
+		case *dns.AAAA:
+			addresses = append(addresses, M.AddrFromIP(answer.AAAA))
+		case *dns.HTTPS:
+			for _, value := range answer.SVCB.Value {
+				if value.Key() == dns.SVCB_IPV4HINT || value.Key() == dns.SVCB_IPV6HINT {
+					addresses = append(addresses, common.Map(strings.Split(value.String(), ","), M.ParseAddr)...)
+				}
+			}
+		}
+	}
+	return addresses
 }
 
 func wrapError(err error) error {

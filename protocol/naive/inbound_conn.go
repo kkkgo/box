@@ -95,7 +95,6 @@ func (p *paddingConn) writeWithPadding(writer io.Writer, data []byte) (n int, er
 		binary.BigEndian.PutUint16(header, uint16(len(data)))
 		header[2] = byte(paddingSize)
 		common.Must1(buffer.Write(data))
-		common.Must(buffer.WriteZeroN(paddingSize))
 		_, err = writer.Write(buffer.Bytes())
 		if err == nil {
 			n = len(data)
@@ -117,7 +116,7 @@ func (p *paddingConn) writeBufferWithPadding(writer io.Writer, buffer *buf.Buffe
 		header := buffer.ExtendHeader(3)
 		binary.BigEndian.PutUint16(header, uint16(bufferLen))
 		header[2] = byte(paddingSize)
-		common.Must(buffer.WriteZeroN(paddingSize))
+		buffer.Extend(paddingSize)
 		p.writePadding++
 	}
 	return common.Error(writer.Write(buffer.Bytes()))
@@ -179,18 +178,18 @@ type naiveConn struct {
 
 func (c *naiveConn) Read(p []byte) (n int, err error) {
 	n, err = c.readWithPadding(c.Conn, p)
-	return n, wrapError(err)
+	return n, baderror.WrapH2(err)
 }
 
 func (c *naiveConn) Write(p []byte) (n int, err error) {
 	n, err = c.writeChunked(c.Conn, p)
-	return n, wrapError(err)
+	return n, baderror.WrapH2(err)
 }
 
 func (c *naiveConn) WriteBuffer(buffer *buf.Buffer) error {
 	defer buffer.Release()
 	err := c.writeBufferWithPadding(c.Conn, buffer)
-	return wrapError(err)
+	return baderror.WrapH2(err)
 }
 
 func (c *naiveConn) FrontHeadroom() int      { return c.frontHeadroom() }
@@ -210,7 +209,7 @@ type naiveH2Conn struct {
 
 func (c *naiveH2Conn) Read(p []byte) (n int, err error) {
 	n, err = c.readWithPadding(c.reader, p)
-	return n, wrapError(err)
+	return n, baderror.WrapH2(err)
 }
 
 func (c *naiveH2Conn) Write(p []byte) (n int, err error) {
@@ -218,7 +217,7 @@ func (c *naiveH2Conn) Write(p []byte) (n int, err error) {
 	if err == nil {
 		c.flusher.Flush()
 	}
-	return n, wrapError(err)
+	return n, baderror.WrapH2(err)
 }
 
 func (c *naiveH2Conn) WriteBuffer(buffer *buf.Buffer) error {
@@ -227,15 +226,7 @@ func (c *naiveH2Conn) WriteBuffer(buffer *buf.Buffer) error {
 	if err == nil {
 		c.flusher.Flush()
 	}
-	return wrapError(err)
-}
-
-func wrapError(err error) error {
-	err = baderror.WrapH2(err)
-	if WrapError != nil {
-		err = WrapError(err)
-	}
-	return err
+	return baderror.WrapH2(err)
 }
 
 func (c *naiveH2Conn) Close() error {

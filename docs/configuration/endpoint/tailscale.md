@@ -8,8 +8,7 @@ icon: material/new-box
     :material-plus: [relay_server_static_endpoints](#relay_server_static_endpoints)  
     :material-plus: [system_interface](#system_interface)  
     :material-plus: [system_interface_name](#system_interface_name)  
-    :material-plus: [system_interface_mtu](#system_interface_mtu)  
-    :material-plus: [advertise_tags](#advertise_tags)
+    :material-plus: [system_interface_mtu](#system_interface_mtu)
 
 !!! question "Since sing-box 1.12.0"
 
@@ -29,7 +28,6 @@ icon: material/new-box
   "exit_node_allow_lan_access": false,
   "advertise_routes": [],
   "advertise_exit_node": false,
-  "advertise_tags": [],
   "relay_server_port": 0,
   "relay_server_static_endpoints": [],
   "system_interface": false,
@@ -103,14 +101,6 @@ Example: `["192.168.1.1/24"]`
 #### advertise_exit_node
 
 Indicates whether the node should advertise itself as an exit node.
-
-#### advertise_tags
-
-!!! question "Since sing-box 1.13.0"
-
-Tags to advertise for this node, for ACL enforcement purposes.
-
-Example: `["tag:server"]`
 
 #### relay_server_port
 

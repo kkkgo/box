@@ -75,7 +75,10 @@ func testShadowTLS(t *testing.T, version int, password string, utlsEanbled bool,
 					ListenOptions: option.ListenOptions{
 						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
 						ListenPort: serverPort,
-						Detour:     "detour",
+
+						InboundOptions: option.InboundOptions{
+							Detour: "detour",
+						},
 					},
 					Handshake: option.ShadowTLSHandshakeOptions{
 						ServerOptions: option.ServerOptions{
@@ -340,7 +343,9 @@ func TestShadowTLSInbound(t *testing.T) {
 					ListenOptions: option.ListenOptions{
 						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
 						ListenPort: serverPort,
-						Detour:     "detour",
+						InboundOptions: option.InboundOptions{
+							Detour: "detour",
+						},
 					},
 					Handshake: option.ShadowTLSHandshakeOptions{
 						ServerOptions: option.ServerOptions{

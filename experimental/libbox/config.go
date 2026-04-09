@@ -12,7 +12,6 @@ import (
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-box/service/oomkiller"
 	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/control"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -23,9 +22,7 @@ import (
 	"github.com/sagernet/sing/service/filemanager"
 )
 
-var sOOMReporter oomkiller.OOMReporter
-
-func baseContext(platformInterface PlatformInterface) context.Context {
+func BaseContext(platformInterface PlatformInterface) context.Context {
 	dnsRegistry := include.DNSTransportRegistry()
 	if platformInterface != nil {
 		if localTransport := platformInterface.LocalDNSTransport(); localTransport != nil {
@@ -36,10 +33,7 @@ func baseContext(platformInterface PlatformInterface) context.Context {
 	}
 	ctx := context.Background()
 	ctx = filemanager.WithDefault(ctx, sWorkingPath, sTempPath, sUserID, sGroupID)
-	if sOOMReporter != nil {
-		ctx = service.ContextWith[oomkiller.OOMReporter](ctx, sOOMReporter)
-	}
-	return box.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry(), dnsRegistry, include.ServiceRegistry(), include.CertificateProviderRegistry())
+	return box.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry(), dnsRegistry, include.ServiceRegistry())
 }
 
 func parseConfig(ctx context.Context, configContent string) (option.Options, error) {
@@ -51,7 +45,7 @@ func parseConfig(ctx context.Context, configContent string) (option.Options, err
 }
 
 func CheckConfig(configContent string) error {
-	ctx := baseContext(nil)
+	ctx := BaseContext(nil)
 	options, err := parseConfig(ctx, configContent)
 	if err != nil {
 		return err
@@ -150,18 +144,6 @@ func (s *platformInterfaceStub) SendNotification(notification *adapter.Notificat
 	return nil
 }
 
-func (s *platformInterfaceStub) UsePlatformNeighborResolver() bool {
-	return false
-}
-
-func (s *platformInterfaceStub) StartNeighborMonitor(listener adapter.NeighborUpdateListener) error {
-	return os.ErrInvalid
-}
-
-func (s *platformInterfaceStub) CloseNeighborMonitor(listener adapter.NeighborUpdateListener) error {
-	return nil
-}
-
 func (s *platformInterfaceStub) UsePlatformLocalDNSTransport() bool {
 	return false
 }
@@ -207,7 +189,7 @@ func (s *interfaceMonitorStub) MyInterface() string {
 }
 
 func FormatConfig(configContent string) (*StringBox, error) {
-	options, err := parseConfig(baseContext(nil), configContent)
+	options, err := parseConfig(BaseContext(nil), configContent)
 	if err != nil {
 		return nil, err
 	}

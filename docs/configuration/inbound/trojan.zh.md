@@ -43,7 +43,7 @@ Trojan 用户。
 
 #### tls
 
-TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/#入站)。
+TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/#inbound)。
 
 #### fallback
 
@@ -61,7 +61,7 @@ TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/#入站)。
 
 #### multiplex
 
-参阅 [多路复用](/zh/configuration/shared/multiplex#入站)。
+参阅 [多路复用](/zh/configuration/shared/multiplex#inbound)。
 
 #### transport
 

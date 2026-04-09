@@ -8,8 +8,7 @@ icon: material/new-box
     :material-plus: [relay_server_static_endpoints](#relay_server_static_endpoints)  
     :material-plus: [system_interface](#system_interface)  
     :material-plus: [system_interface_name](#system_interface_name)  
-    :material-plus: [system_interface_mtu](#system_interface_mtu)  
-    :material-plus: [advertise_tags](#advertise_tags)
+    :material-plus: [system_interface_mtu](#system_interface_mtu)
 
 !!! question "自 sing-box 1.12.0 起"
 
@@ -29,7 +28,6 @@ icon: material/new-box
   "exit_node_allow_lan_access": false,
   "advertise_routes": [],
   "advertise_exit_node": false,
-  "advertise_tags": [],
   "relay_server_port": 0,
   "relay_server_static_endpoints": [],
   "system_interface": false,
@@ -102,14 +100,6 @@ icon: material/new-box
 #### advertise_exit_node
 
 指示节点是否应将自己通告为出口节点。
-
-#### advertise_tags
-
-!!! question "自 sing-box 1.13.0 起"
-
-为此节点通告的标签，用于 ACL 执行。
-
-示例：`["tag:server"]`
 
 #### relay_server_port
 
